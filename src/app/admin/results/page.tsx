@@ -15,6 +15,15 @@ interface Match {
   equipo_visitante: { nombre: string } | null
 }
 
+const QUESTION_LABELS: Record<string, string> = {
+  p1: '¿Primer gol del Mundial?',
+  p2: '¿Goleador del Mundial?',
+  p3: '¿Goles del goleador?',
+  p4: '¿Máximo asistidor?',
+  p5: '¿Equipo con más goles?',
+  p6: '¿Goles en la Final?',
+}
+
 export default function AdminResultsPage() {
   const [matches, setMatches] = useState<Match[]>([])
   const [loading, setLoading] = useState(true)
@@ -22,9 +31,12 @@ export default function AdminResultsPage() {
   const [recalcLoading, setRecalcLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [filterGrupo, setFilterGrupo] = useState<string>('todos')
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({})
+  const [savingQuestion, setSavingQuestion] = useState<string | null>(null)
 
   useEffect(() => {
     loadMatches()
+    loadQuestionAnswers()
   }, [])
 
   async function loadMatches() {
@@ -73,6 +85,42 @@ export default function AdminResultsPage() {
     setSaving(null)
   }
 
+  async function loadQuestionAnswers() {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('official_results')
+      .select('key, value')
+      .eq('scope', 'question')
+    if (data) {
+      const map: Record<string, string> = {}
+      for (const row of data as { key: string; value: { answer?: string } }[]) {
+        map[row.key] = row.value?.answer ?? ''
+      }
+      setQuestionAnswers(map)
+    }
+  }
+
+  async function saveQuestionAnswer(key: string) {
+    setSavingQuestion(key)
+    setMessage('')
+    const res = await fetch('/api/admin/results', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'question',
+        key,
+        value: { answer: questionAnswers[key] ?? '' },
+      }),
+    })
+    const data = await res.json() as { error?: string }
+    if (res.ok) {
+      setMessage('✅ Pregunta guardada')
+    } else {
+      setMessage(`❌ ${data.error}`)
+    }
+    setSavingQuestion(null)
+  }
+
   async function handleRecalc() {
     setRecalcLoading(true)
     setMessage('')
@@ -112,6 +160,35 @@ export default function AdminResultsPage() {
           {message}
         </div>
       )}
+
+      {/* Preguntas oficiales */}
+      <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4">
+        <h2 className="text-sm font-semibold text-[#e6edf3] mb-3">Respuestas oficiales a preguntas</h2>
+        <div className="space-y-3">
+          {Object.entries(QUESTION_LABELS).map(([key, label]) => (
+            <div key={key} className="flex items-center gap-3">
+              <label className="text-xs text-[#768390] w-44 shrink-0">{label}</label>
+              <input
+                type="text"
+                value={questionAnswers[key] ?? ''}
+                onChange={(e) => setQuestionAnswers((prev) => ({ ...prev, [key]: e.target.value }))}
+                placeholder="Ingresa la respuesta oficial"
+                className="flex-1 py-1.5 px-2 rounded bg-[#21262d] border border-[#30363d] text-sm text-[#e6edf3] focus:outline-none focus:border-[#9EE637] placeholder:text-[#444d56]"
+              />
+              <button
+                onClick={() => saveQuestionAnswer(key)}
+                disabled={savingQuestion === key}
+                className="px-3 py-1.5 rounded bg-[#9EE637] text-[#0d1117] text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity shrink-0"
+              >
+                {savingQuestion === key ? '…' : 'Guardar'}
+              </button>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-[#768390] mt-3">
+          Después de guardar respuestas, usa el botón &quot;Recalcular puntos&quot; para actualizar los scores.
+        </p>
+      </div>
 
       {/* Filtro por grupo */}
       <div className="flex gap-2 flex-wrap">
