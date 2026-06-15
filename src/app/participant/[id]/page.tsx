@@ -415,20 +415,33 @@ export default async function ParticipantPage({ params }: Props) {
                     const m = pred.matches
                     if (!m) return null
                     const finished = m.estado === 'finished' && m.goles_local !== null
-                    let status = '—'
-                    let statusColor = 'text-[#768390]'
+                    const live = m.estado === 'live'
+                    let score = { signo: 0, exacto: 0, total: 0 }
                     if (finished) {
-                      const s = scoreGroupMatch(
+                      score = scoreGroupMatch(
                         { predLocal: pred.pred_local, predVisitante: pred.pred_visitante },
                         { golesLocal: m.goles_local!, golesVisitante: m.goles_visitante! },
                       )
-                      if (s.total === 5) { status = '+5 ✓✓'; statusColor = 'text-[#58a6ff]' }
-                      else if (s.total === 2) { status = '+2 ✓'; statusColor = 'text-[#9EE637]' }
-                      else { status = '✗'; statusColor = 'text-[#768390]' }
                     }
+
+                    let status = '—'
+                    let statusColor = 'text-[#444d56]'
+                    let rowBg = ''
+                    if (finished) {
+                      if (score.total === 5) {
+                        status = '+5 ✓✓'; statusColor = 'text-[#58a6ff]'; rowBg = 'bg-[#58a6ff]/5'
+                      } else if (score.total === 2) {
+                        status = '+2 ✓'; statusColor = 'text-[#9EE637]'; rowBg = 'bg-[#9EE637]/5'
+                      } else {
+                        status = '✗'; statusColor = 'text-[#f85149]'; rowBg = 'bg-[#f85149]/5'
+                      }
+                    } else if (live) {
+                      status = '🔴'; statusColor = 'text-[#f85149]'
+                    }
+
                     return (
                       <Link key={m.id ?? idx} href={`/match/${m.id}`}>
-                        <div className="flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-[#1c2128] transition-colors text-sm">
+                        <div className={`flex items-center gap-2 py-2 px-3 rounded-lg hover:brightness-110 transition-all text-sm ${rowBg}`}>
                           <span className="flex-1 text-[#e6edf3] truncate min-w-0">
                             {m.equipo_local?.nombre}{' '}
                             <span className="text-[#9EE637] font-mono">
@@ -436,12 +449,12 @@ export default async function ParticipantPage({ params }: Props) {
                             </span>{' '}
                             {m.equipo_visitante?.nombre}
                           </span>
-                          {finished && (
+                          {(finished || live) && (
                             <span className="text-xs text-[#768390] shrink-0 font-mono">
                               {m.goles_local}–{m.goles_visitante}
                             </span>
                           )}
-                          <span className={`text-xs font-mono shrink-0 w-14 text-right ${statusColor}`}>
+                          <span className={`text-xs font-mono shrink-0 w-14 text-right font-bold ${statusColor}`}>
                             {status}
                           </span>
                         </div>
