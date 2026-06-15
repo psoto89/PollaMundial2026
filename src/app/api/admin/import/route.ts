@@ -60,6 +60,16 @@ export async function POST(req: NextRequest) {
       .select('id, nombre')
     if (teamsLoadError) throw new Error(`teams load: ${teamsLoadError.message}`)
     const teamIdByNombre = new Map(teamsData!.map((t: { id: string; nombre: string }) => [t.nombre, t.id]))
+    // Mapa secundario: nombre normalizado (sin acentos, minúsculas) → id — para participantes que usan MAYÚSCULAS o variantes sin tilde
+    function normalizeName(s: string): string {
+      return s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    }
+    const teamIdByNormalized = new Map(
+      teamsData!.map((t: { id: string; nombre: string }) => [normalizeName(t.nombre), t.id])
+    )
+    function lookupTeamId(nombre: string): string | undefined {
+      return teamIdByNombre.get(nombre) ?? teamIdByNormalized.get(normalizeName(nombre))
+    }
 
     // 2. Upsert partidos de grupo
     const matchRows = preview.matches.map((m) => ({
@@ -119,12 +129,12 @@ export async function POST(req: NextRequest) {
 
       // Pronósticos de clasificados
       const qualPredRows = p.predictionsQualify
-        .filter((pr) => pr.team && teamIdByNombre.has(pr.team))
+        .filter((pr) => pr.team && lookupTeamId(pr.team) !== undefined)
         .map((pr) => ({
           participant_id: participantId,
           grupo: pr.grupo,
           posicion: pr.posicion,
-          team_id: teamIdByNombre.get(pr.team)!,
+          team_id: lookupTeamId(pr.team)!,
         }))
       if (qualPredRows.length > 0) {
         const { error } = await db
@@ -135,11 +145,11 @@ export async function POST(req: NextRequest) {
 
       // Pronósticos de semis
       const semisPredRows = p.predictionsSemis
-        .filter((pr) => pr.team && teamIdByNombre.has(pr.team))
+        .filter((pr) => pr.team && lookupTeamId(pr.team) !== undefined)
         .map((pr) => ({
           participant_id: participantId,
           puesto: pr.puesto,
-          team_id: teamIdByNombre.get(pr.team)!,
+          team_id: lookupTeamId(pr.team)!,
         }))
       if (semisPredRows.length > 0) {
         const { error } = await db
@@ -163,12 +173,12 @@ export async function POST(req: NextRequest) {
         if (error) throw new Error(`pred_questions ${p.sheetAlias}: ${error.message}`)
       }
 
-      // Inicializar scores_cache en 0 si no existe
+      // Inicializar scores_cache en 0 solo si aún no existe (no sobrescribir puntos calculados)
       await db
         .from('scores_cache')
         .upsert(
           { participant_id: participantId, total: 0, total_grupos: 0, total_clasificados: 0, total_semis: 0, total_preguntas: 0 },
-          { onConflict: 'participant_id' },
+          { onConflict: 'participant_id', ignoreDuplicates: true },
         )
     }
 
