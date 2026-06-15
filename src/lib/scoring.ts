@@ -214,7 +214,7 @@ function normalizeText(s: string | number): string {
     .replace(/[̀-ͯ]/g, '') // quitar acentos: ñ→n, é→e, etc.
 }
 
-function answersMatch(
+export function answersMatch(
   a: string | number,
   b: string | number,
 ): boolean {

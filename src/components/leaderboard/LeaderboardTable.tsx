@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 interface ScoreRow {
@@ -24,6 +25,7 @@ interface Props {
 }
 
 export default function LeaderboardTable({ initialScores }: Props) {
+  const router = useRouter()
   const [scores, setScores] = useState<ScoreRow[]>(initialScores)
   const prevRanks = useRef<Map<string, number>>(new Map())
   const [flashMap, setFlashMap] = useState<Map<string, 'up' | 'down'>>(new Map())
@@ -88,18 +90,25 @@ export default function LeaderboardTable({ initialScores }: Props) {
             <th className="text-right pb-3 px-2 hidden sm:table-cell">Clasif.</th>
             <th className="text-right pb-3 px-2 hidden sm:table-cell">Semis</th>
             <th className="text-right pb-3 px-2 hidden sm:table-cell">Preguntas</th>
-            <th className="text-right pb-3 pl-4 font-bold text-[#e6edf3]">Total</th>
+            <th className="text-right pb-3 pl-4 font-bold text-[#e6edf3]">
+              Total
+              <span className="block text-[#444d56] text-[10px] font-normal normal-case tracking-normal">
+                toca para ver desglose
+              </span>
+            </th>
           </tr>
         </thead>
         <tbody>
           {scores.map((row, idx) => {
             const flash = flashMap.get(row.participant_id)
             const participante = row.participants
+            const href = `/participant/${participante?.id ?? row.participant_id}`
             return (
               <tr
                 key={row.participant_id}
+                onClick={() => router.push(href)}
                 className={`
-                  border-b border-[#21262d] transition-colors
+                  border-b border-[#21262d] transition-colors cursor-pointer
                   hover:bg-[#161b22]
                   ${flash === 'up' ? 'rank-up' : ''}
                   ${flash === 'down' ? 'rank-down' : ''}
@@ -113,7 +122,8 @@ export default function LeaderboardTable({ initialScores }: Props) {
                 {/* Nombre */}
                 <td className="py-3 pr-4">
                   <Link
-                    href={`/participant/${participante?.id ?? row.participant_id}`}
+                    href={href}
+                    onClick={(e) => e.stopPropagation()}
                     className="font-medium text-[#e6edf3] hover:text-[#9EE637] transition-colors"
                   >
                     {participante?.nombre ?? row.participant_id}
@@ -121,25 +131,25 @@ export default function LeaderboardTable({ initialScores }: Props) {
                 </td>
 
                 {/* Desglose (solo desktop) */}
-                <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390]">
+                <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390] tabular-nums">
                   {row.total_grupos}
                 </td>
-                <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390]">
+                <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390] tabular-nums">
                   {row.total_clasificados}
                 </td>
-                <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390]">
+                <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390] tabular-nums">
                   {row.total_semis}
                 </td>
-                <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390]">
+                <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390] tabular-nums">
                   {row.total_preguntas}
                 </td>
 
-                {/* Total */}
+                {/* Total — botón visual */}
                 <td className="py-3 pl-4 text-right">
-                  <span className="font-bold text-[#9EE637] tabular-nums text-base">
+                  <span className="inline-flex items-center gap-1 font-bold text-[#9EE637] tabular-nums text-base group-hover:underline">
                     {row.total}
+                    <span className="text-[#768390] text-xs font-normal">pts</span>
                   </span>
-                  <span className="text-[#768390] text-xs ml-1">pts</span>
                 </td>
               </tr>
             )

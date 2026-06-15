@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { scoreGroupMatch, scoreQualify, scoreSemis } from '@/lib/scoring'
+import { scoreGroupMatch, scoreQualify, scoreSemis, answersMatch } from '@/lib/scoring'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Puesto, PreguntaKey } from '@/types'
@@ -259,9 +259,9 @@ export default async function ParticipantPage({ params }: Props) {
           <div className="space-y-2">
             {qPreds.map((q) => {
               const officialAns = officialAnswers.get(q.pregunta_key as PreguntaKey)
-              const isCorrect = officialAns != null
-                ? String(q.respuesta ?? '').trim().toLowerCase() === String(officialAns).trim().toLowerCase()
-                : null
+              const isCorrect = officialAns != null && q.respuesta != null
+                ? answersMatch(q.respuesta, officialAns as string | number)
+                : officialAns != null ? false : null
               return (
                 <div key={q.pregunta_key} className="flex items-center gap-3 py-2.5 px-3 bg-[#161b22] rounded-lg border border-[#30363d]">
                   <div className="flex-1 min-w-0">
