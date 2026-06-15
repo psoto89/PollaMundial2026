@@ -47,6 +47,12 @@ export default function RootLayout({
                 EN VIVO
               </Link>
               <Link
+                href="/reglas"
+                className="text-[#768390] hover:text-[#e6edf3] transition-colors"
+              >
+                Reglas
+              </Link>
+              <Link
                 href="/premiacion"
                 className="text-[#768390] hover:text-[#e6edf3] transition-colors"
               >

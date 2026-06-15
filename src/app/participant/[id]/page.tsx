@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
-import { scoreGroupMatch } from '@/lib/scoring'
+import { scoreGroupMatch, scoreQualify, scoreSemis } from '@/lib/scoring'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import type { Puesto, PreguntaKey } from '@/types'
 
 export const revalidate = 60
 
@@ -39,6 +40,12 @@ interface QuestionPredRow {
   respuesta: string | null
 }
 
+interface OfficialRow {
+  scope: string
+  key: string
+  value: Record<string, unknown>
+}
+
 const QUESTION_LABELS: Record<string, string> = {
   p1: '¿Primer gol del Mundial?',
   p2: '¿Goleador del Mundial?',
@@ -56,8 +63,46 @@ const PUESTO_LABELS: Record<string, string> = {
 }
 
 const PUESTO_ORDER: Record<string, number> = { campeon: 0, subcampeon: 1, '3': 2, '4': 3 }
+const POSICION_LABELS: Record<number, string> = { 1: '1°', 2: '2°', 3: '3° ↗' }
 
-const POSICION_LABELS: Record<number, string> = { 1: '1º', 2: '2º', 3: '3º ↗' }
+// ─── Builders de resultados oficiales ────────────────────────────────────────
+
+function buildQualifyOfficial(rows: OfficialRow[]) {
+  const official = {
+    classified: {} as Record<string, { grupo: string; posicion: 1 | 2 }>,
+    bestThirds: [] as string[],
+  }
+  for (const row of rows) {
+    if (row.scope !== 'qualify') continue
+    const [grupo, posStr] = row.key.split(':')
+    const pos = parseInt(posStr, 10) as 1 | 2 | 3
+    const team = String((row.value as { team?: string }).team ?? '')
+    if (!team) continue
+    if (pos === 3) {
+      official.bestThirds.push(team)
+    } else {
+      official.classified[team] = { grupo, posicion: pos as 1 | 2 }
+    }
+  }
+  return official
+}
+
+function buildSemisOfficial(rows: OfficialRow[]) {
+  const official = {
+    semifinalistas: [] as string[],
+    puestosExactos: {} as Record<Puesto, string>,
+  }
+  for (const row of rows) {
+    if (row.scope !== 'semis') continue
+    const team = String((row.value as { team?: string }).team ?? '')
+    if (!team) continue
+    official.puestosExactos[row.key as Puesto] = team
+    if (!official.semifinalistas.includes(team)) {
+      official.semifinalistas.push(team)
+    }
+  }
+  return official
+}
 
 export default async function ParticipantPage({ params }: Props) {
   const { id } = await params
@@ -77,7 +122,7 @@ export default async function ParticipantPage({ params }: Props) {
     { data: qualifyPredsRaw },
     { data: semisPredsRaw },
     { data: questionPreds },
-    { data: officialQuestions },
+    { data: officialRaw },
   ] = await Promise.all([
     supabase.from('scores_cache').select('*').eq('participant_id', id).single(),
     supabase
@@ -108,21 +153,46 @@ export default async function ParticipantPage({ params }: Props) {
       .order('pregunta_key'),
     supabase
       .from('official_results')
-      .select('key, value')
-      .eq('scope', 'question'),
+      .select('scope, key, value'),
   ])
 
   const groupPreds = (groupPredsRaw ?? []) as unknown as GroupPredRow[]
   const qualifyPreds = (qualifyPredsRaw ?? []) as unknown as QualifyPredRow[]
   const semisPreds = (semisPredsRaw ?? []) as unknown as SemisPredRow[]
   const qPreds = (questionPreds ?? []) as QuestionPredRow[]
+  const officialRows = (officialRaw ?? []) as OfficialRow[]
 
+  // Construir estructuras de resultados oficiales
+  const qualifyOfficial = buildQualifyOfficial(officialRows)
+  const semisOfficial = buildSemisOfficial(officialRows)
   const officialAnswers = new Map(
-    (officialQuestions ?? []).map((r: { key: string; value: Record<string, unknown> }) => [
-      r.key,
-      (r.value as { answer?: string | number }).answer ?? null,
-    ]),
+    officialRows
+      .filter((r) => r.scope === 'question')
+      .map((r) => [r.key, (r.value as { answer?: string | number }).answer ?? null]),
   )
+
+  const hasQualifyOfficial = Object.keys(qualifyOfficial.classified).length > 0 || qualifyOfficial.bestThirds.length > 0
+  const hasSemisOfficial = semisOfficial.semifinalistas.length > 0
+
+  // Proyección de puntos por pick en Clasificados
+  const qualifyScorePerPick = qualifyPreds.map((pred) => {
+    const teamNombre = pred.teams?.nombre ?? ''
+    const result = scoreQualify(
+      [{ grupo: pred.grupo, posicion: pred.posicion as 1 | 2 | 3, teamNombre }],
+      qualifyOfficial,
+    )
+    return { ...pred, pts: result.total }
+  })
+
+  // Proyección de puntos por pick en Semis
+  const semisScorePerPick = semisPreds.map((pred) => {
+    const teamNombre = pred.teams?.nombre ?? ''
+    const result = scoreSemis(
+      [{ puesto: pred.puesto as Puesto, teamNombre }],
+      semisOfficial,
+    )
+    return { ...pred, pts: result.total }
+  })
 
   // Agrupar partidos por grupo
   const predsByGrupo = new Map<string, GroupPredRow[]>()
@@ -134,12 +204,15 @@ export default async function ParticipantPage({ params }: Props) {
   const sortedGrupos = Array.from(predsByGrupo.keys()).sort()
 
   // Agrupar clasificados por grupo
-  const qualifyByGrupo = new Map<string, QualifyPredRow[]>()
-  for (const pred of qualifyPreds) {
+  const qualifyByGrupo = new Map<string, typeof qualifyScorePerPick>()
+  for (const pred of qualifyScorePerPick) {
     if (!qualifyByGrupo.has(pred.grupo)) qualifyByGrupo.set(pred.grupo, [])
     qualifyByGrupo.get(pred.grupo)!.push(pred)
   }
   const qualifyGrupos = Array.from(qualifyByGrupo.keys()).sort()
+
+  const totalQualifyPts = qualifyScorePerPick.reduce((s, p) => s + p.pts, 0)
+  const totalSemisPts = semisScorePerPick.reduce((s, p) => s + p.pts, 0)
 
   return (
     <div className="space-y-8">
@@ -179,26 +252,38 @@ export default async function ParticipantPage({ params }: Props) {
       {/* Preguntas */}
       {qPreds.length > 0 && (
         <div>
-          <h2 className="text-lg font-semibold text-[#e6edf3] mb-3">Preguntas</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-[#e6edf3]">Preguntas</h2>
+            <span className="text-xs text-[#768390]">+7 pts por acierto</span>
+          </div>
           <div className="space-y-2">
             {qPreds.map((q) => {
-              const officialAns = officialAnswers.get(q.pregunta_key)
+              const officialAns = officialAnswers.get(q.pregunta_key as PreguntaKey)
               const isCorrect = officialAns != null
                 ? String(q.respuesta ?? '').trim().toLowerCase() === String(officialAns).trim().toLowerCase()
                 : null
               return (
-                <div key={q.pregunta_key} className="py-2.5 px-3 bg-[#161b22] rounded-lg border border-[#30363d]">
-                  <p className="text-xs text-[#768390] mb-1">{QUESTION_LABELS[q.pregunta_key]}</p>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-[#e6edf3]">{q.respuesta ?? '—'}</span>
+                <div key={q.pregunta_key} className="flex items-center gap-3 py-2.5 px-3 bg-[#161b22] rounded-lg border border-[#30363d]">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-[#768390] mb-0.5">{QUESTION_LABELS[q.pregunta_key]}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-[#e6edf3]">{q.respuesta ?? '—'}</span>
+                      {officialAns != null && (
+                        <span className="text-xs text-[#768390]">
+                          · Oficial: <span className="text-[#e6edf3]">{String(officialAns)}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="shrink-0">
                     {isCorrect === true && (
-                      <span className="text-xs font-semibold text-[#9EE637]">✓ +7 pts</span>
+                      <span className="text-xs font-bold text-[#9EE637]">+7</span>
                     )}
-                    {isCorrect === false && officialAns != null && (
-                      <span className="text-xs text-[#768390]">✗ · Correcto: {String(officialAns)}</span>
+                    {isCorrect === false && (
+                      <span className="text-xs text-[#768390]">✗</span>
                     )}
-                    {officialAns == null && (
-                      <span className="text-xs text-[#768390]">pendiente</span>
+                    {isCorrect === null && (
+                      <span className="text-xs text-[#444d56]">—</span>
                     )}
                   </div>
                 </div>
@@ -211,38 +296,70 @@ export default async function ParticipantPage({ params }: Props) {
       {/* Puestos finales */}
       {semisPreds.length > 0 && (
         <div>
-          <h2 className="text-lg font-semibold text-[#e6edf3] mb-3">Puestos finales</h2>
-          <div className="space-y-2">
-            {[...semisPreds]
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-[#e6edf3]">Puestos finales</h2>
+            {hasSemisOfficial && (
+              <span className="text-sm font-bold text-[#9EE637]">+{totalSemisPts} pts</span>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            {semisScorePerPick
               .sort((a, b) => (PUESTO_ORDER[a.puesto] ?? 9) - (PUESTO_ORDER[b.puesto] ?? 9))
               .map((p) => (
                 <div
                   key={p.puesto}
-                  className="flex items-center gap-3 py-2.5 px-3 bg-[#161b22] rounded-lg border border-[#30363d]"
+                  className={`flex items-center gap-3 py-2.5 px-3 rounded-lg border ${
+                    p.pts > 0 ? 'bg-[#9EE637]/5 border-[#9EE637]/20' : 'bg-[#161b22] border-[#30363d]'
+                  }`}
                 >
                   <span className="text-sm text-[#768390] w-28 shrink-0">{PUESTO_LABELS[p.puesto] ?? p.puesto}</span>
-                  <span className="text-sm font-medium text-[#e6edf3]">{p.teams?.nombre ?? '—'}</span>
+                  <span className="text-sm font-medium text-[#e6edf3] flex-1">{p.teams?.nombre ?? '—'}</span>
+                  <span className={`text-sm font-bold tabular-nums shrink-0 ${p.pts > 0 ? 'text-[#9EE637]' : 'text-[#444d56]'}`}>
+                    {hasSemisOfficial ? (p.pts > 0 ? `+${p.pts}` : '—') : '?'}
+                  </span>
                 </div>
               ))}
           </div>
+          {!hasSemisOfficial && (
+            <p className="text-xs text-[#444d56] mt-2">Puntos disponibles cuando el torneo llegue a semifinales</p>
+          )}
         </div>
       )}
 
       {/* Clasificados por grupo */}
       {qualifyPreds.length > 0 && (
         <div>
-          <h2 className="text-lg font-semibold text-[#e6edf3] mb-3">Clasificados</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-[#e6edf3]">Clasificados</h2>
+            {hasQualifyOfficial && (
+              <span className="text-sm font-bold text-[#9EE637]">+{totalQualifyPts} pts</span>
+            )}
+          </div>
+          <p className="text-xs text-[#768390] mb-3">
+            +4 por equipo clasificado · +4 adicional si acierta la posición · +4 por mejor tercero
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {qualifyGrupos.map((grupo) => {
               const picks = (qualifyByGrupo.get(grupo) ?? []).sort((a, b) => a.posicion - b.posicion)
+              const grupoPts = picks.reduce((s, p) => s + p.pts, 0)
               return (
                 <div key={grupo} className="bg-[#161b22] border border-[#30363d] rounded-lg p-3">
-                  <div className="text-xs font-semibold text-[#768390] mb-2">Grupo {grupo}</div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-[#768390]">Grupo {grupo}</span>
+                    {hasQualifyOfficial && grupoPts > 0 && (
+                      <span className="text-xs font-bold text-[#9EE637]">+{grupoPts}</span>
+                    )}
+                  </div>
                   <div className="space-y-1.5">
                     {picks.map((pick) => (
                       <div key={pick.posicion} className="flex items-center gap-2">
                         <span className="text-xs text-[#768390] w-8 shrink-0">{POSICION_LABELS[pick.posicion]}</span>
-                        <span className="text-sm text-[#e6edf3]">{pick.teams?.nombre ?? '—'}</span>
+                        <span className={`text-sm flex-1 ${pick.pts > 0 ? 'text-[#e6edf3]' : 'text-[#768390]'}`}>
+                          {pick.teams?.nombre ?? '—'}
+                        </span>
+                        <span className={`text-xs font-mono shrink-0 ${pick.pts > 0 ? 'text-[#9EE637] font-bold' : 'text-[#444d56]'}`}>
+                          {hasQualifyOfficial ? (pick.pts > 0 ? `+${pick.pts}` : '—') : '?'}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -250,6 +367,9 @@ export default async function ParticipantPage({ params }: Props) {
               )
             })}
           </div>
+          {!hasQualifyOfficial && (
+            <p className="text-xs text-[#444d56] mt-2">Puntos disponibles cuando se carguen los clasificados oficiales</p>
+          )}
         </div>
       )}
 
@@ -269,6 +389,12 @@ export default async function ParticipantPage({ params }: Props) {
               )
               return s.total > 0
             }).length
+            const ptosGrupo = finishedPreds.reduce((sum, p) => {
+              return sum + scoreGroupMatch(
+                { predLocal: p.pred_local, predVisitante: p.pred_visitante },
+                { golesLocal: p.matches!.goles_local!, golesVisitante: p.matches!.goles_visitante! },
+              ).total
+            }, 0)
 
             return (
               <details key={grupo} className="group">
@@ -279,6 +405,9 @@ export default async function ParticipantPage({ params }: Props) {
                       ? `${aciertos}/${finishedPreds.length} aciertos`
                       : `${preds.length} partidos`}
                   </span>
+                  {ptosGrupo > 0 && (
+                    <span className="text-xs font-bold text-[#9EE637]">+{ptosGrupo}</span>
+                  )}
                   <span className="text-xs text-[#768390]">▸</span>
                 </summary>
                 <div className="mt-1 ml-2 space-y-0.5">
@@ -295,7 +424,7 @@ export default async function ParticipantPage({ params }: Props) {
                       )
                       if (s.total === 5) { status = '+5 ✓✓'; statusColor = 'text-[#58a6ff]' }
                       else if (s.total === 2) { status = '+2 ✓'; statusColor = 'text-[#9EE637]' }
-                      else { status = '0 ✗'; statusColor = 'text-[#768390]' }
+                      else { status = '✗'; statusColor = 'text-[#768390]' }
                     }
                     return (
                       <Link key={m.id ?? idx} href={`/match/${m.id}`}>
