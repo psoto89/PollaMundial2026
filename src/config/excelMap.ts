@@ -75,35 +75,84 @@ export const PRIZE_CELLS = {
 // Clave: variante sucia (lowercase, sin espacios extra)
 // Valor: nombre canónico
 const TEAM_ALIASES_RAW: Record<string, string> = {
+  // Rep. Checa — variantes y typos
   'rep checa':       'Rep. Checa',
   'rep. checa':      'Rep. Checa',
   'república checa': 'Rep. Checa',
+  'republic':        'Rep. Checa',
+  'repu checa':      'Rep. Checa',
+  'checa':           'Rep. Checa',
+
+  // Egipto
   'egypto':          'Egipto',
   'egipto':          'Egipto',
+
+  // Curacao
   'cuaracao':        'Curacao',
   'curaçao':         'Curacao',
   'curacao':         'Curacao',
+
+  // Corea del Sur
   'corea del sur':   'Corea del Sur',
   'corea':           'Corea del Sur',
   'korea':           'Corea del Sur',
+  'corea s':         'Corea del Sur',
+
+  // USA
   'estados unidos':  'USA',
   'ee.uu.':          'USA',
   'ee. uu.':         'USA',
   'eeuu':            'USA',
   'usa':             'USA',
+
+  // Países Bajos
   'holanda':         'Países Bajos',
   'países bajos':    'Países Bajos',
   'paises bajos':    'Países Bajos',
   'netherlands':     'Países Bajos',
+
+  // Irán
   'irán':            'Irán',
   'iran':            'Irán',
-  'nueva zelanda':   'Nueva Zelanda',
-  'new zealand':     'Nueva Zelanda',
-  'arabia saudita':  'Arabia Saudita',
-  'arabia saudí':    'Arabia Saudita',
-  'côte d\'ivoire':  'Costa de Marfil',
-  'costa de marfil': 'Costa de Marfil',
-  'ivory coast':     'Costa de Marfil',
+
+  // N. Zelanda — DB tiene 'N. Zelanda'
+  'n zelanda':       'N. Zelanda',
+  'nueva zelanda':   'N. Zelanda',
+  'new zealand':     'N. Zelanda',
+  'n. zelanda':      'N. Zelanda',
+
+  // Arabia — DB tiene 'Arabia' (no 'Arabia Saudita')
+  'arabia saudita':  'Arabia',
+  'arabia saudí':    'Arabia',
+  'arabia s':        'Arabia',
+  'arabia':          'Arabia',
+
+  // Costa De M — DB tiene 'Costa De M' (truncado en el Excel original)
+  'costa de marfil': 'Costa De M',
+  'costa de m':      'Costa De M',
+  'côte d\'ivoire':  'Costa De M',
+  'ivory coast':     'Costa De M',
+
+  // Algeria — DB tiene 'Algeria' (en inglés/francés, no español)
+  'argelia':         'Algeria',
+
+  // Typos de participantes individuales
+  'austra':          'Austria',       // Julián
+  'porugal':         'Portugal',      // Julián
+  'portuagal':       'Portugal',      // Diego
+  'argentiina':      'Argentina',     // Diego
+  'croacia 7':       'Croacia',       // Diego
+  'espana':          'España',        // varios (sin tilde)
+  'belgica':         'Bélgica',       // varios
+  'japon':           'Japón',         // varios (sin tilde)
+  'turquia':         'Turquía',       // varios (sin tilde)
+  'canada':          'Canadá',        // varios (sin tilde)
+  'mexico':          'México',        // varios (sin tilde)
+  'sudafrica':       'Sudáfrica',     // Julián (sin tilde)
+  'uzbekistan':      'Uzbekistán',    // Toño, De La (sin tilde)
+  'tunez':           'Tunez',         // normalizar
+
+  // Rep. Dominicana
   'república dominicana': 'Rep. Dominicana',
   'rep. dominicana': 'Rep. Dominicana',
   'rep dominicana':  'Rep. Dominicana',

@@ -60,9 +60,13 @@ export async function POST(req: NextRequest) {
       .select('id, nombre')
     if (teamsLoadError) throw new Error(`teams load: ${teamsLoadError.message}`)
     const teamIdByNombre = new Map(teamsData!.map((t: { id: string; nombre: string }) => [t.nombre, t.id]))
-    // Mapa secundario: nombre normalizado (sin acentos, minúsculas) → id — para participantes que usan MAYÚSCULAS o variantes sin tilde
+    // Mapa secundario: nombre normalizado (sin acentos, sin puntuación, minúsculas) → id
+    // Cubre variantes como MEXICO→México, N Zelanda→N. Zelanda, trailing spaces, etc.
     function normalizeName(s: string): string {
-      return s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      return s.trim().toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '') // quitar acentos
+        .replace(/[.,'\-]/g, '')                  // quitar puntuación
+        .replace(/\s+/g, ' ').trim()              // normalizar espacios
     }
     const teamIdByNormalized = new Map(
       teamsData!.map((t: { id: string; nombre: string }) => [normalizeName(t.nombre), t.id])
