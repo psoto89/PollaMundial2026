@@ -36,6 +36,28 @@ export default async function LivePage() {
   const liveMatches = (liveMatchesRaw ?? []) as unknown as LiveMatchRow[]
   const liveMatchIds = liveMatches.map((m) => m.id)
 
+  // ── Próximos partidos (jornadas que vienen) ─────────────────────────────────
+  const { data: upcomingRaw } = await supabase
+    .from('matches')
+    .select(`
+      id, grupo, fase, match_index, kickoff_at, estado,
+      equipo_local:teams!equipo_local_id(id, nombre),
+      equipo_visitante:teams!equipo_visitante_id(id, nombre)
+    `)
+    .eq('estado', 'scheduled')
+    .not('kickoff_at', 'is', null)
+    .gte('kickoff_at', new Date().toISOString())
+    .order('kickoff_at', { ascending: true })
+    .limit(16)
+
+  type UpcomingMatchRow = {
+    id: string; grupo: string | null; fase: string; match_index: number
+    kickoff_at: string | null; estado: string
+    equipo_local: { id: string; nombre: string } | null
+    equipo_visitante: { id: string; nombre: string } | null
+  }
+  const upcomingMatches = (upcomingRaw ?? []) as unknown as UpcomingMatchRow[]
+
   type PredRow = {
     participant_id: string; match_id: string
     pred_local: number; pred_visitante: number
@@ -61,6 +83,7 @@ export default async function LivePage() {
       initialMatches={liveMatches}
       initialPreds={groupPreds}
       participants={(participants ?? []) as { id: string; nombre: string }[]}
+      upcomingMatches={upcomingMatches}
     />
   )
 }

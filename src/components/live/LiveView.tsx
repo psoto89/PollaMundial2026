@@ -30,13 +30,28 @@ interface Participant {
   nombre: string
 }
 
+interface UpcomingMatch {
+  id: string
+  grupo: string | null
+  fase: string
+  match_index: number
+  kickoff_at: string | null
+  estado: string
+  equipo_local: { id: string; nombre: string } | null
+  equipo_visitante: { id: string; nombre: string } | null
+}
+
 interface Props {
   initialMatches: LiveMatch[]
   initialPreds: Pred[]
   participants: Participant[]
+  upcomingMatches: UpcomingMatch[]
 }
 
-export default function LiveView({ initialMatches, initialPreds, participants }: Props) {
+// Minutos antes del kickoff en que cierra el pronóstico de eliminación
+const DEADLINE_MINUTES = 60
+
+export default function LiveView({ initialMatches, initialPreds, participants, upcomingMatches }: Props) {
   const [matches, setMatches] = useState<LiveMatch[]>(initialMatches)
   const [preds, setPreds] = useState<Pred[]>(initialPreds)
 
@@ -95,40 +110,122 @@ export default function LiveView({ initialMatches, initialPreds, participants }:
     return () => clearInterval(interval)
   }, [matches.length])
 
-  if (matches.length === 0) {
-    return (
-      <div className="space-y-6">
+  return (
+    <div className="space-y-10">
+      {/* ── Partidos en vivo ─────────────────────────────────────── */}
+      {matches.length > 0 ? (
+        <div className="space-y-8">
+          <div className="flex items-center gap-3">
+            <span className="live-dot w-3 h-3 rounded-full bg-[#f85149]" />
+            <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight">En Vivo</h1>
+          </div>
+
+          {matches.map((match) => {
+            const matchPreds = preds.filter((p) => p.match_id === match.id)
+            return (
+              <LiveMatchCard
+                key={match.id}
+                match={match}
+                preds={matchPreds}
+                allParticipants={participants}
+              />
+            )
+          })}
+        </div>
+      ) : (
         <div>
-          <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight">En Vivo</h1>
+          <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight mb-4">En Vivo</h1>
+          <div className="text-center py-12 text-[#768390] bg-[#161b22] border border-[#30363d] rounded-xl">
+            <p className="text-4xl mb-3">⚽</p>
+            <p className="text-base font-medium text-[#e6edf3]">No hay partidos en vivo ahora</p>
+            <p className="text-sm mt-1">Mira los próximos abajo</p>
+          </div>
         </div>
-        <div className="text-center py-20 text-[#768390]">
-          <p className="text-5xl mb-4">⚽</p>
-          <p className="text-lg font-medium text-[#e6edf3]">No hay partidos en vivo ahora</p>
-          <p className="text-sm mt-2">Los partidos aparecerán aquí cuando empiecen</p>
+      )}
+
+      {/* ── Próximos partidos ────────────────────────────────────── */}
+      {upcomingMatches.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-[#e6edf3] tracking-tight">Próximos partidos</h2>
+          <p className="text-sm text-[#768390] -mt-2">
+            Toca un partido para ver los pronósticos de todas las pollas
+          </p>
+          <div className="space-y-2">
+            {upcomingMatches.map((m) => (
+              <UpcomingMatchCard key={m.id} match={m} />
+            ))}
+          </div>
         </div>
-      </div>
-    )
-  }
+      )}
+    </div>
+  )
+}
+
+// ─── Tarjeta de próximo partido ───────────────────────────────
+
+function formatKickoff(iso: string | null): string {
+  if (!iso) return 'Por definir'
+  const d = new Date(iso)
+  return d.toLocaleString('es-CO', {
+    weekday: 'short', day: 'numeric', month: 'short',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
+function UpcomingMatchCard({ match }: { match: UpcomingMatch }) {
+  const isKnockout = match.fase !== 'grupos'
+  const [closeLabel, setCloseLabel] = useState<string | null>(null)
+
+  // Countdown al cierre (kickoff − 60min), solo para eliminación
+  useEffect(() => {
+    if (!isKnockout || !match.kickoff_at) return
+    const deadline = new Date(match.kickoff_at).getTime() - DEADLINE_MINUTES * 60_000
+
+    const tick = () => {
+      const diff = deadline - Date.now()
+      if (diff <= 0) { setCloseLabel('Cerrado'); return }
+      const h = Math.floor(diff / 3_600_000)
+      const min = Math.floor((diff % 3_600_000) / 60_000)
+      setCloseLabel(h > 0 ? `Cierra en ${h}h ${min}m` : `Cierra en ${min}m`)
+    }
+    tick()
+    const id = setInterval(tick, 30_000)
+    return () => clearInterval(id)
+  }, [isKnockout, match.kickoff_at])
+
+  const faseLabel = isKnockout ? match.fase : `Grupo ${match.grupo}`
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        <span className="live-dot w-3 h-3 rounded-full bg-[#f85149]" />
-        <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight">En Vivo</h1>
+    <Link
+      href={`/match/${match.id}`}
+      className="block bg-[#161b22] border border-[#30363d] rounded-xl px-4 py-3 hover:border-[#9EE637]/50 transition-colors"
+    >
+      <div className="flex items-center justify-between mb-1.5 text-xs">
+        <span className="text-[#768390] uppercase tracking-wide">{faseLabel}</span>
+        <span className="text-[#768390]">{formatKickoff(match.kickoff_at)}</span>
       </div>
-
-      {matches.map((match) => {
-        const matchPreds = preds.filter((p) => p.match_id === match.id)
-        return (
-          <LiveMatchCard
-            key={match.id}
-            match={match}
-            preds={matchPreds}
-            allParticipants={participants}
-          />
-        )
-      })}
-    </div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-semibold text-[#e6edf3] flex-1 text-right truncate">
+          {match.equipo_local?.nombre ?? '—'}
+        </span>
+        <span className="text-xs text-[#768390] shrink-0">vs</span>
+        <span className="text-sm font-semibold text-[#e6edf3] flex-1 truncate">
+          {match.equipo_visitante?.nombre ?? '—'}
+        </span>
+      </div>
+      <div className="flex items-center justify-between mt-2">
+        {closeLabel ? (
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+            closeLabel === 'Cerrado'
+              ? 'bg-[#f85149]/15 text-[#f85149]'
+              : 'bg-[#9EE637]/15 text-[#9EE637]'
+          }`}>
+            {closeLabel}
+          </span>
+        ) : <span />}
+        <span className="text-xs text-[#9EE637]">Ver pronósticos →</span>
+      </div>
+    </Link>
   )
 }
 
