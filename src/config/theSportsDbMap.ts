@@ -5,6 +5,7 @@
  * Fuente: GET /api/v2/json/schedule/league/4429/2026 (validado con datos reales).
  * idLeague = 4429 (env WORLDCUP_LEAGUE_ID)
  */
+import { normalizeTeam } from '@/config/excelMap'
 
 // ─── Status mapping ───────────────────────────────────────────────────────────
 
@@ -97,4 +98,34 @@ const TEAM_MAP: Record<string, string> = {
  */
 export function tsdbTeamToDb(englishName: string): string {
   return TEAM_MAP[englishName] ?? englishName
+}
+
+// ─── Cruce de partidos order-independent ─────────────────────────────────────
+// El Excel y TheSportsDB no siempre coinciden en quién es local/visitante
+// (p.ej. BD: "Suiza vs Catar" pero TheSportsDB: "Qatar vs Switzerland").
+// La clave usa el par ORDENADO para que ambos lados colisionen sin importar el orden.
+
+/** Clave de par de equipos independiente del orden local/visitante. */
+export function teamPairKey(a: string, b: string): string {
+  return [normalizeTeam(a), normalizeTeam(b)].sort().join('__')
+}
+
+/**
+ * Orienta el marcador de TheSportsDB al orden local/visitante de NUESTRA BD.
+ * Si el local de TheSportsDB es el mismo que nuestro local → directo.
+ * Si está invertido → swap de goles. Así nunca guardamos el marcador al revés.
+ *
+ * @param tsdbHomeDbName  nombre del local de TheSportsDB ya convertido a ES (tsdbTeamToDb)
+ * @param ourHomeName     nombre de nuestro equipo local en la BD
+ */
+export function orientScores(
+  tsdbHomeDbName: string,
+  ourHomeName: string,
+  homeScore: number | null,
+  awayScore: number | null,
+): { goles_local: number | null; goles_visitante: number | null } {
+  const sameOrientation = normalizeTeam(tsdbHomeDbName) === normalizeTeam(ourHomeName)
+  return sameOrientation
+    ? { goles_local: homeScore, goles_visitante: awayScore }
+    : { goles_local: awayScore, goles_visitante: homeScore }
 }

@@ -10,8 +10,7 @@
  * idEvent es la clave externa — el mismo en schedule y livescore.
  */
 import { createAdminClient } from '@/lib/supabase/admin'
-import { mapTsdbStatus, tsdbTeamToDb } from '@/config/theSportsDbMap'
-import { normalizeTeam } from '@/config/excelMap'
+import { mapTsdbStatus, tsdbTeamToDb, teamPairKey, orientScores } from '@/config/theSportsDbMap'
 
 const LEAGUE_ID  = process.env.WORLDCUP_LEAGUE_ID ?? '4429'
 const BASE_URL   = 'https://www.thesportsdb.com/api/v2/json'
@@ -147,8 +146,8 @@ export async function syncSchedule(): Promise<SyncResult> {
     for (const m of rawMatches as unknown as OurMatchFull[]) {
       if (m.external_id) byExtId.set(m.external_id, m)
       if (m.equipo_local && m.equipo_visitante) {
-        const key = `${normalizeTeam(m.equipo_local.nombre)}__${normalizeTeam(m.equipo_visitante.nombre)}`
-        byTeamKey.set(key, m)
+        // Clave order-independent: colisiona aunque local/visitante estén invertidos
+        byTeamKey.set(teamPairKey(m.equipo_local.nombre, m.equipo_visitante.nombre), m)
       }
     }
 
@@ -160,10 +159,8 @@ export async function syncSchedule(): Promise<SyncResult> {
       let needsIdSet = false
 
       if (!our) {
-        // Primera vez: cruzar por nombre de equipo
-        const homeDb = normalizeTeam(tsdbTeamToDb(ev.strHomeTeam))
-        const awayDb = normalizeTeam(tsdbTeamToDb(ev.strAwayTeam))
-        our = byTeamKey.get(`${homeDb}__${awayDb}`)
+        // Primera vez: cruzar por par de equipos (sin importar el orden)
+        our = byTeamKey.get(teamPairKey(tsdbTeamToDb(ev.strHomeTeam), tsdbTeamToDb(ev.strAwayTeam)))
         if (our) needsIdSet = true
       }
 
@@ -192,10 +189,18 @@ export async function syncSchedule(): Promise<SyncResult> {
         estado:         estadoFinal,
       }
 
-      if (needsIdSet)             update['external_id']      = ev.idEvent
-      if (ev.strTimestamp)        update['kickoff_at']       = ev.strTimestamp
-      if (homeScore !== null)     update['goles_local']      = homeScore
-      if (awayScore !== null)     update['goles_visitante']  = awayScore
+      // Orientar el marcador al orden local/visitante de NUESTRA BD (swap si invertido)
+      const oriented = orientScores(
+        tsdbTeamToDb(ev.strHomeTeam),
+        our.equipo_local?.nombre ?? '',
+        homeScore,
+        awayScore,
+      )
+
+      if (needsIdSet)                        update['external_id']     = ev.idEvent
+      if (ev.strTimestamp)                   update['kickoff_at']      = ev.strTimestamp
+      if (oriented.goles_local !== null)     update['goles_local']     = oriented.goles_local
+      if (oriented.goles_visitante !== null) update['goles_visitante'] = oriented.goles_visitante
 
       const { error } = await db.from('matches').update(update).eq('id', our.id)
       if (error) {
@@ -236,13 +241,19 @@ export async function syncLive(): Promise<SyncResult> {
 
     const { data: rawMatches } = await db
       .from('matches')
-      .select('id, external_id, goles_local, goles_visitante, estado, last_source, last_source_at')
+      .select(`
+        id, external_id, goles_local, goles_visitante, estado, last_source, last_source_at,
+        equipo_local:teams!equipo_local_id(nombre),
+        equipo_visitante:teams!equipo_visitante_id(nombre)
+      `)
       .not('external_id', 'is', null)
 
     if (!rawMatches) return result
 
-    const byExtId = new Map<string, OurMatch>(
-      (rawMatches as OurMatch[]).map((m) => [m.external_id!, m])
+    type OurMatchLive = OurMatch & { equipo_local: { nombre: string } | null }
+
+    const byExtId = new Map<string, OurMatchLive>(
+      (rawMatches as unknown as OurMatchLive[]).map((m) => [m.external_id!, m])
     )
 
     let anyNewlyFinished = false
@@ -267,9 +278,16 @@ export async function syncLive(): Promise<SyncResult> {
         last_source_at: new Date().toISOString(),
         estado:         newEstado,
       }
-      if (homeScore !== null)  update['goles_local']      = homeScore
-      if (awayScore !== null)  update['goles_visitante']  = awayScore
-      if (minuto !== null)     update['minuto']           = minuto
+      // Orientar marcador al orden local/visitante de nuestra BD (swap si invertido)
+      const oriented = orientScores(
+        tsdbTeamToDb(ev.strHomeTeam),
+        our.equipo_local?.nombre ?? '',
+        homeScore,
+        awayScore,
+      )
+      if (oriented.goles_local !== null)     update['goles_local']     = oriented.goles_local
+      if (oriented.goles_visitante !== null) update['goles_visitante'] = oriented.goles_visitante
+      if (minuto !== null)                   update['minuto']          = minuto
 
       const { error } = await db.from('matches').update(update).eq('id', our.id)
       if (error) {
