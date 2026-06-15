@@ -11,6 +11,7 @@ interface Props {
 
 interface MatchRow {
   id: string
+  fase: string
   grupo: string | null
   match_index: number
   goles_local: number | null
@@ -42,7 +43,7 @@ export default async function MatchPage({ params }: Props) {
   const { data: matchRaw } = await supabase
     .from('matches')
     .select(`
-      id, grupo, match_index, goles_local, goles_visitante, estado, minuto, kickoff_at,
+      id, fase, grupo, match_index, goles_local, goles_visitante, estado, minuto, kickoff_at,
       equipo_local:teams!equipo_local_id(nombre),
       equipo_visitante:teams!equipo_visitante_id(nombre)
     `)
@@ -51,6 +52,16 @@ export default async function MatchPage({ params }: Props) {
 
   if (!matchRaw) notFound()
   const match = matchRaw as unknown as MatchRow
+
+  // Eliminación: ocultar pronósticos de otros hasta el cierre (kickoff - deadline)
+  const isKnockout = match.fase !== 'grupos'
+  let predsHidden = false
+  if (isKnockout && match.kickoff_at) {
+    const { data: cfg } = await supabase.from('app_config').select('deadline_minutes').single()
+    const deadlineMin = cfg?.deadline_minutes ?? 60
+    const deadlineMs = new Date(match.kickoff_at).getTime() - deadlineMin * 60_000
+    predsHidden = Date.now() < deadlineMs
+  }
 
   const { data: predsRaw } = await supabase
     .from('predictions_group')
@@ -88,7 +99,7 @@ export default async function MatchPage({ params }: Props) {
       {/* Marcador */}
       <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-6">
         <div className="flex items-center justify-between mb-3 text-xs text-[#768390]">
-          <span>Grupo {match.grupo}</span>
+          <span>{isKnockout ? match.fase : `Grupo ${match.grupo}`}</span>
           <span className={isLive ? 'text-[#f85149] font-semibold' : ''}>
             {estadoLabel[match.estado] ?? match.estado}
             {isLive && match.minuto ? ` · ${match.minuto}'` : ''}
@@ -136,6 +147,15 @@ export default async function MatchPage({ params }: Props) {
       </div>
 
       {/* Pronósticos con desglose */}
+      {predsHidden ? (
+        <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-8 text-center">
+          <p className="text-3xl mb-3">🔒</p>
+          <p className="text-base font-medium text-[#e6edf3]">Pronósticos ocultos hasta el cierre</p>
+          <p className="text-sm text-[#768390] mt-1">
+            Se revelan cuando cierre el pronóstico de este partido (1h antes del inicio).
+          </p>
+        </div>
+      ) : (
       <div>
         <h2 className="text-lg font-semibold text-[#e6edf3] mb-3">
           Pronósticos ({predsWithScores.length})
@@ -193,6 +213,7 @@ export default async function MatchPage({ params }: Props) {
           )}
         </div>
       </div>
+      )}
     </div>
   )
 }

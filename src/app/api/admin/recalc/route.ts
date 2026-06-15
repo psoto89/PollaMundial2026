@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       { data: officialResults },
     ] = await Promise.all([
       db.from('participants').select('id'),
-      db.from('matches').select('id, match_index, goles_local, goles_visitante').eq('estado', 'finished').eq('fase', 'grupos').not('goles_local', 'is', null),
+      db.from('matches').select('id, fase, match_index, goles_local, goles_visitante').eq('estado', 'finished').not('goles_local', 'is', null),
       db.from('predictions_group').select('participant_id, match_id, pred_local, pred_visitante'),
       db.from('predictions_qualify').select('participant_id, grupo, posicion, team_id, teams!inner(nombre)'),
       db.from('predictions_semis').select('participant_id, puesto, team_id, teams!inner(nombre)'),
@@ -62,12 +62,14 @@ export async function POST(req: NextRequest) {
     const semisOfficial = buildSemisOfficial(officialResults ?? [])
     const questionOfficial = buildQuestionOfficial(officialResults ?? [])
 
-    const matchResultMap = new Map(
-      (finishedMatches ?? []).map((m: { id: string; goles_local: number; goles_visitante: number }) => [
-        m.id,
-        { golesLocal: m.goles_local, golesVisitante: m.goles_visitante },
-      ]),
-    )
+    // Separar resultados de grupos vs eliminación (misma regla de marcador para ambos)
+    type FinishedMatch = { id: string; fase: string; goles_local: number; goles_visitante: number }
+    const grupoResultMap = new Map<string, { golesLocal: number; golesVisitante: number }>()
+    const elimResultMap = new Map<string, { golesLocal: number; golesVisitante: number }>()
+    for (const m of (finishedMatches ?? []) as FinishedMatch[]) {
+      const target = m.fase === 'grupos' ? grupoResultMap : elimResultMap
+      target.set(m.id, { golesLocal: m.goles_local, golesVisitante: m.goles_visitante })
+    }
 
     // Agrupar pronósticos por participante
     const groupPredsByPart = groupBy(allGroupPreds ?? [], 'participant_id')
@@ -80,16 +82,19 @@ export async function POST(req: NextRequest) {
     for (const p of participants) {
       type QualPred = { grupo: string; posicion: number; teams: { nombre: string } }
       type SemiPred = { puesto: string; teams: { nombre: string } }
-      const totalGrupos = calcGroups(groupPredsByPart.get(p.id) ?? [], matchResultMap)
+      const partPreds = groupPredsByPart.get(p.id) ?? []
+      const totalGrupos = calcGroups(partPreds, grupoResultMap)
+      const totalEliminacion = calcGroups(partPreds, elimResultMap)
       const totalClasificados = calcQualify((qualPredsByPart.get(p.id) ?? []) as unknown as QualPred[], qualifyOfficial)
       const totalSemis = calcSemis((semiPredsByPart.get(p.id) ?? []) as unknown as SemiPred[], semisOfficial)
       const totalPreguntas = calcQuestions(questionPredsByPart.get(p.id) ?? [], questionOfficial)
-      const total = totalGrupos + totalClasificados + totalSemis + totalPreguntas
+      const total = totalGrupos + totalEliminacion + totalClasificados + totalSemis + totalPreguntas
 
       updates.push({
         participant_id: p.id,
         total,
         total_grupos: totalGrupos,
+        total_eliminacion: totalEliminacion,
         total_clasificados: totalClasificados,
         total_semis: totalSemis,
         total_preguntas: totalPreguntas,
