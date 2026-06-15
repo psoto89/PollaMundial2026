@@ -1,15 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
 import LiveView from '@/components/live/LiveView'
-import { syncBdlToSupabase } from '@/lib/bdlPoller'
+import { syncLive } from '@/lib/tsdbPoller'
 
 export const revalidate = 0
 
 export default async function LivePage() {
-  // Pull desde BDL antes de renderizar — actualiza marcadores en Supabase.
-  // Si no hay API key configurada o falla, la página sigue funcionando con datos actuales.
-  if (process.env.BALLDONTLIE_API_KEY) {
+  // Pull desde TheSportsDB antes de renderizar — actualiza marcadores en Supabase.
+  // Si no hay API key o falla, la página sigue con los datos actuales.
+  if (process.env.THESPORTSDB_API_KEY) {
     try {
-      await syncBdlToSupabase('live')
+      await syncLive()
     } catch {
       // No bloquear el render si falla el poll
     }
@@ -26,7 +26,6 @@ export default async function LivePage() {
     `)
     .eq('estado', 'live')
 
-  // Supabase devuelve joins como array sin tipos generados; castear explícitamente
   type LiveMatchRow = {
     id: string; grupo: string | null; match_index: number
     goles_local: number | null; goles_visitante: number | null

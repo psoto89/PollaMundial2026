@@ -1,22 +1,19 @@
 /**
  * POST /api/live/poll
- *
- * Pull público (sin auth) que actualiza los partidos en vivo desde BDL.
- * Llamado por el LiveView cada 45 segundos cuando hay partidos live.
- *
- * Rate-limiting implícito: Vercel Edge Cache limita a 1 call por instancia.
- * No requiere auth — es una lectura de datos públicos de fútbol.
+ * Pull público (sin auth) llamado por LiveView cada 60s para actualizar
+ * marcadores desde TheSportsDB livescore.
+ * Solo activo cuando hay partidos live (el cliente lo comprueba antes de llamar).
  */
 import { NextResponse } from 'next/server'
-import { syncBdlToSupabase } from '@/lib/bdlPoller'
+import { syncLive } from '@/lib/tsdbPoller'
 
 export async function POST() {
-  if (!process.env.BALLDONTLIE_API_KEY) {
+  if (!process.env.THESPORTSDB_API_KEY) {
     return NextResponse.json({ ok: false, reason: 'no_api_key' })
   }
 
   try {
-    const result = await syncBdlToSupabase('live')
+    const result = await syncLive()
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 })
