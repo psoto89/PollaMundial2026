@@ -79,14 +79,22 @@ export default async function AdminDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Link href="/admin/import">
           <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-5 hover:border-[#9EE637]/40 transition-colors">
+            <p className="text-xs font-semibold text-[#768390] uppercase tracking-widest mb-1">Paso 1</p>
             <h3 className="font-semibold text-[#e6edf3] mb-1">📥 Importar Excel</h3>
             <p className="text-sm text-[#768390]">Cargar Gran_Polla_Mundial_2026.xlsx con los pronósticos</p>
+          </div>
+        </Link>
+        <Link href="/admin/bdl">
+          <div className="bg-[#161b22] border border-[#9EE637]/20 rounded-xl p-5 hover:border-[#9EE637]/60 transition-colors">
+            <p className="text-xs font-semibold text-[#9EE637] uppercase tracking-widest mb-1">Paso 2 — Mundial en curso</p>
+            <h3 className="font-semibold text-[#e6edf3] mb-1">🔗 Sync BallDontLie</h3>
+            <p className="text-sm text-[#768390]">Mapear external_id + importar marcadores actuales</p>
           </div>
         </Link>
         <Link href="/admin/results">
           <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-5 hover:border-[#9EE637]/40 transition-colors">
             <h3 className="font-semibold text-[#e6edf3] mb-1">⚽ Cargar resultados</h3>
-            <p className="text-sm text-[#768390]">Marcadores, estado en vivo, resultados oficiales</p>
+            <p className="text-sm text-[#768390]">Marcadores manuales, estado en vivo, resultados oficiales</p>
           </div>
         </Link>
       </div>
