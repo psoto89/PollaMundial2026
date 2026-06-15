@@ -39,44 +39,60 @@ export default function LiveView({ initialMatches, initialPreds, participants }:
   const [matches, setMatches] = useState<LiveMatch[]>(initialMatches)
   const [preds, setPreds] = useState<Pred[]>(initialPreds)
 
-  // Suscripción Realtime a matches
+  // ── Suscripción Realtime a matches ──────────────────────────────────────────
   useEffect(() => {
     const supabase = createClient()
+
+    async function refetchLive() {
+      const { data: liveMatches } = await supabase
+        .from('matches')
+        .select(`
+          id, grupo, match_index, goles_local, goles_visitante, minuto, estado,
+          equipo_local:teams!equipo_local_id(id, nombre),
+          equipo_visitante:teams!equipo_visitante_id(id, nombre)
+        `)
+        .eq('estado', 'live')
+      if (liveMatches) {
+        setMatches(liveMatches as unknown as LiveMatch[])
+        const ids = (liveMatches as { id: string }[]).map((m) => m.id)
+        if (ids.length > 0) {
+          const { data: newPreds } = await supabase
+            .from('predictions_group')
+            .select('participant_id, match_id, pred_local, pred_visitante, participants(id, nombre)')
+            .in('match_id', ids)
+          if (newPreds) setPreds(newPreds as unknown as Pred[])
+        } else {
+          setPreds([])
+        }
+      }
+    }
+
     const channel = supabase
       .channel('live-matches')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'matches' },
-        async (payload) => {
-          // Re-fetch los partidos en vivo
-          const { data: liveMatches } = await supabase
-            .from('matches')
-            .select(`
-              id, grupo, match_index, goles_local, goles_visitante, minuto, estado,
-              equipo_local:teams!equipo_local_id(id, nombre),
-              equipo_visitante:teams!equipo_visitante_id(id, nombre)
-            `)
-            .eq('estado', 'live')
-          if (liveMatches) {
-            setMatches(liveMatches as unknown as LiveMatch[])
-            // Re-fetch preds para los nuevos partidos en vivo
-            const ids = (liveMatches as { id: string }[]).map((m) => m.id)
-            if (ids.length > 0) {
-              const { data: newPreds } = await supabase
-                .from('predictions_group')
-                .select('participant_id, match_id, pred_local, pred_visitante, participants(id, nombre)')
-                .in('match_id', ids)
-              if (newPreds) setPreds(newPreds as unknown as Pred[])
-            } else {
-              setPreds([])
-            }
-          }
-        },
-      )
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, refetchLive)
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
   }, [])
+
+  // ── Auto-poll cada 45s mientras hay partidos live ────────────────────────────
+  // Llama a /api/live/poll para actualizar marcadores desde BDL (sin webhooks).
+  // Solo activo cuando hay matches en vivo; se detiene si no hay ninguno.
+  useEffect(() => {
+    if (matches.length === 0) return
+
+    const poll = async () => {
+      try {
+        await fetch('/api/live/poll', { method: 'POST' })
+        // El update en Supabase dispara Realtime → el canal de arriba se encarga del render
+      } catch {
+        // Silencioso — no crítico
+      }
+    }
+
+    const interval = setInterval(poll, 45_000)
+    return () => clearInterval(interval)
+  }, [matches.length])
 
   if (matches.length === 0) {
     return (

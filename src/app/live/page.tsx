@@ -1,9 +1,20 @@
 import { createClient } from '@/lib/supabase/server'
 import LiveView from '@/components/live/LiveView'
+import { syncBdlToSupabase } from '@/lib/bdlPoller'
 
 export const revalidate = 0
 
 export default async function LivePage() {
+  // Pull desde BDL antes de renderizar — actualiza marcadores en Supabase.
+  // Si no hay API key configurada o falla, la página sigue funcionando con datos actuales.
+  if (process.env.BALLDONTLIE_API_KEY) {
+    try {
+      await syncBdlToSupabase('live')
+    } catch {
+      // No bloquear el render si falla el poll
+    }
+  }
+
   const supabase = await createClient()
 
   const { data: liveMatchesRaw } = await supabase
