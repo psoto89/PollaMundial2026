@@ -99,6 +99,12 @@ export default async function AdminDashboard() {
             <p className="text-sm text-[#768390]">Marcadores manuales, estado en vivo, resultados oficiales</p>
           </div>
         </Link>
+        <Link href="/admin/preguntas">
+          <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-5 hover:border-[#9EE637]/40 transition-colors">
+            <h3 className="font-semibold text-[#e6edf3] mb-1">❓ Revisar preguntas</h3>
+            <p className="text-sm text-[#768390]">Ver las 13 respuestas por pregunta y verificar quién acertó</p>
+          </div>
+        </Link>
       </div>
     </div>
   )

@@ -206,6 +206,14 @@ export function scoreQuestions(
   return { acertadas, total: acertadas * 7 }
 }
 
+function normalizeText(s: string | number): string {
+  return String(s)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // quitar acentos: ñ→n, é→e, etc.
+}
+
 function answersMatch(
   a: string | number,
   b: string | number,
@@ -215,8 +223,18 @@ function answersMatch(
   const nb = Number(b)
   if (!isNaN(na) && !isNaN(nb)) return na === nb
 
-  // Comparación textual normalizada
-  return String(a).trim().toLowerCase() === String(b).trim().toLowerCase()
+  // Comparación textual normalizada (sin acentos, sin mayúsculas)
+  const na2 = normalizeText(a)
+  const nb2 = normalizeText(b)
+  if (na2 === nb2) return true
+
+  // Comparación de contenido: "Quiñones" matchea "Julián Quiñones"
+  // Solo aplica si ambas tienen al menos 3 caracteres (evitar falsos positivos)
+  if (na2.length >= 3 && nb2.length >= 3) {
+    return na2.includes(nb2) || nb2.includes(na2)
+  }
+
+  return false
 }
 
 // ─── Totales por participante ─────────────────────────────────────────────────
