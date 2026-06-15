@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { scoreGroupMatch } from '@/lib/scoring'
 
 interface ScoreRow {
   participant_id: string
@@ -20,55 +21,126 @@ interface ScoreRow {
   } | null
 }
 
-interface Props {
-  initialScores: ScoreRow[]
+interface LiveMatchLite {
+  id: string
+  goles_local: number | null
+  goles_visitante: number | null
 }
 
-export default function LeaderboardTable({ initialScores }: Props) {
+interface LivePred {
+  participant_id: string
+  match_id: string
+  pred_local: number
+  pred_visitante: number
+}
+
+interface Props {
+  initialScores: ScoreRow[]
+  initialLiveMatches?: LiveMatchLite[]
+  initialLivePreds?: LivePred[]
+}
+
+export default function LeaderboardTable({
+  initialScores,
+  initialLiveMatches = [],
+  initialLivePreds = [],
+}: Props) {
   const router = useRouter()
   const [scores, setScores] = useState<ScoreRow[]>(initialScores)
+  const [liveMatches, setLiveMatches] = useState<LiveMatchLite[]>(initialLiveMatches)
+  const [livePreds, setLivePreds] = useState<LivePred[]>(initialLivePreds)
   const prevRanks = useRef<Map<string, number>>(new Map())
   const [flashMap, setFlashMap] = useState<Map<string, 'up' | 'down'>>(new Map())
 
-  // Suscripción Realtime a scores_cache
+  // ── Puntos tentativos en vivo por participante ──────────────────────────────
+  const liveDeltaByParticipant = useMemo(() => {
+    const delta = new Map<string, number>()
+    if (liveMatches.length === 0) return delta
+    const scoreByMatch = new Map(liveMatches.map((m) => [m.id, m]))
+    for (const pred of livePreds) {
+      const m = scoreByMatch.get(pred.match_id)
+      if (!m || m.goles_local === null || m.goles_visitante === null) continue
+      const pts = scoreGroupMatch(
+        { predLocal: pred.pred_local, predVisitante: pred.pred_visitante },
+        { golesLocal: m.goles_local, golesVisitante: m.goles_visitante },
+      ).total
+      if (pts > 0) delta.set(pred.participant_id, (delta.get(pred.participant_id) ?? 0) + pts)
+    }
+    return delta
+  }, [liveMatches, livePreds])
+
+  const hasLive = liveMatches.length > 0
+
+  // ── Tabla efectiva (total + tentativo), ordenada ────────────────────────────
+  const displayScores = useMemo(() => {
+    return scores
+      .map((row) => {
+        const liveDelta = liveDeltaByParticipant.get(row.participant_id) ?? 0
+        return { row, liveDelta, effectiveTotal: row.total + liveDelta }
+      })
+      .sort((a, b) => b.effectiveTotal - a.effectiveTotal)
+  }, [scores, liveDeltaByParticipant])
+
+  // ── Animación de cambios de posición (incluye reordenamiento por puntos en vivo)
+  useEffect(() => {
+    const newRanks = new Map(displayScores.map((s, i) => [s.row.participant_id, i]))
+    if (prevRanks.current.size > 0) {
+      const newFlash = new Map<string, 'up' | 'down'>()
+      for (const [pid, newRank] of newRanks.entries()) {
+        const oldRank = prevRanks.current.get(pid)
+        if (oldRank !== undefined && oldRank !== newRank) {
+          newFlash.set(pid, newRank < oldRank ? 'up' : 'down')
+        }
+      }
+      if (newFlash.size > 0) {
+        setFlashMap(newFlash)
+        const t = setTimeout(() => setFlashMap(new Map()), 2000)
+        prevRanks.current = newRanks
+        return () => clearTimeout(t)
+      }
+    }
+    prevRanks.current = newRanks
+  }, [displayScores])
+
+  // ── Realtime: scores_cache + matches (para el tentativo en vivo) ─────────────
   useEffect(() => {
     const supabase = createClient()
+
+    async function refetchScores() {
+      const { data } = await supabase
+        .from('scores_cache')
+        .select('*, participants(id, nombre, sheet_alias, avatar_url)')
+        .order('total', { ascending: false })
+      if (data) setScores(data as unknown as ScoreRow[])
+    }
+
+    async function refetchLive() {
+      const { data: lm } = await supabase
+        .from('matches')
+        .select('id, goles_local, goles_visitante')
+        .eq('estado', 'live')
+      const matches = (lm ?? []) as LiveMatchLite[]
+      setLiveMatches(matches)
+      const ids = matches.map((m) => m.id)
+      if (ids.length > 0) {
+        const { data: preds } = await supabase
+          .from('predictions_group')
+          .select('participant_id, match_id, pred_local, pred_visitante')
+          .in('match_id', ids)
+        setLivePreds((preds ?? []) as LivePred[])
+      } else {
+        setLivePreds([])
+      }
+    }
+
     const channel = supabase
-      .channel('scores-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'scores_cache' },
-        async () => {
-          // Re-fetch para tener datos completos con join
-          const { data } = await supabase
-            .from('scores_cache')
-            .select('*, participants(id, nombre, sheet_alias, avatar_url)')
-            .order('total', { ascending: false })
-          if (data) {
-            // Calcular cambios de posición para la animación
-            const newRanks = new Map(data.map((s: ScoreRow, i: number) => [s.participant_id, i]))
-            const newFlash = new Map<string, 'up' | 'down'>()
-            for (const [pid, newRank] of newRanks.entries()) {
-              const oldRank = prevRanks.current.get(pid)
-              if (oldRank !== undefined && oldRank !== newRank) {
-                newFlash.set(pid, newRank < oldRank ? 'up' : 'down')
-              }
-            }
-            prevRanks.current = newRanks
-            setFlashMap(newFlash)
-            setScores(data)
-            // Limpiar las clases de flash tras la animación
-            setTimeout(() => setFlashMap(new Map()), 2000)
-          }
-        },
-      )
+      .channel('leaderboard-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'scores_cache' }, refetchScores)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, refetchLive)
       .subscribe()
 
-    // Guardar posiciones iniciales
-    prevRanks.current = new Map(initialScores.map((s, i) => [s.participant_id, i]))
-
     return () => { supabase.removeChannel(channel) }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   if (scores.length === 0) {
     return (
@@ -81,6 +153,12 @@ export default function LeaderboardTable({ initialScores }: Props) {
 
   return (
     <div className="overflow-x-auto -mx-4 px-4">
+      {hasLive && (
+        <p className="text-xs text-[#768390] mb-2 flex items-center gap-1.5">
+          <span className="live-dot w-1.5 h-1.5 rounded-full bg-[#f85149]" />
+          Puntos <span className="text-[#9EE637] font-semibold">en vivo</span> tentativos según el marcador actual
+        </p>
+      )}
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-[#30363d] text-[#768390] text-xs uppercase tracking-wide">
@@ -99,10 +177,11 @@ export default function LeaderboardTable({ initialScores }: Props) {
           </tr>
         </thead>
         <tbody>
-          {scores.map((row, idx) => {
+          {displayScores.map(({ row, liveDelta, effectiveTotal }, idx) => {
             const flash = flashMap.get(row.participant_id)
             const participante = row.participants
             const href = `/participant/${participante?.id ?? row.participant_id}`
+            const isLiveScoring = liveDelta > 0
             return (
               <tr
                 key={row.participant_id}
@@ -110,16 +189,15 @@ export default function LeaderboardTable({ initialScores }: Props) {
                 className={`
                   border-b border-[#21262d] transition-colors cursor-pointer
                   hover:bg-[#161b22]
+                  ${isLiveScoring ? 'bg-[#9EE637]/5' : ''}
                   ${flash === 'up' ? 'rank-up' : ''}
                   ${flash === 'down' ? 'rank-down' : ''}
                 `}
               >
-                {/* Posición */}
                 <td className="py-3 pr-4 text-[#768390] font-mono text-xs">
                   {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
                 </td>
 
-                {/* Nombre */}
                 <td className="py-3 pr-4">
                   <Link
                     href={href}
@@ -130,7 +208,6 @@ export default function LeaderboardTable({ initialScores }: Props) {
                   </Link>
                 </td>
 
-                {/* Desglose (solo desktop) */}
                 <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390] tabular-nums">
                   {row.total_grupos}
                 </td>
@@ -144,10 +221,17 @@ export default function LeaderboardTable({ initialScores }: Props) {
                   {row.total_preguntas}
                 </td>
 
-                {/* Total — botón visual */}
+                {/* Total (con tentativo en vivo resaltado) */}
                 <td className="py-3 pl-4 text-right">
-                  <span className="inline-flex items-center gap-1 font-bold text-[#9EE637] tabular-nums text-base group-hover:underline">
-                    {row.total}
+                  <span className="inline-flex items-center gap-1.5 justify-end">
+                    {isLiveScoring && (
+                      <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
+                        +{liveDelta} en vivo
+                      </span>
+                    )}
+                    <span className="font-bold tabular-nums text-base text-[#9EE637]">
+                      {effectiveTotal}
+                    </span>
                     <span className="text-[#768390] text-xs font-normal">pts</span>
                   </span>
                 </td>

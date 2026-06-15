@@ -43,8 +43,7 @@ export default async function Home() {
         equipo_local:teams!equipo_local_id(nombre),
         equipo_visitante:teams!equipo_visitante_id(nombre)
       `)
-      .eq('estado', 'live')
-      .limit(1),
+      .eq('estado', 'live'),
     supabase
       .from('matches')
       .select(`
@@ -57,8 +56,27 @@ export default async function Home() {
       .limit(20),
   ])
 
-  const liveMatch = liveMatchesRaw?.[0] as LiveMatchRow | undefined ?? null
+  const liveMatchesAll = (liveMatchesRaw ?? []) as unknown as LiveMatchRow[]
+  const liveMatch = liveMatchesAll[0] ?? null
   const recentMatches = (recentMatchesRaw ?? []) as unknown as MatchRow[]
+
+  // Pronósticos de los partidos en vivo → puntos tentativos en la tabla general
+  const liveIds = liveMatchesAll.map((m) => m.id)
+  const { data: livePredsRaw } = liveIds.length > 0
+    ? await supabase
+        .from('predictions_group')
+        .select('participant_id, match_id, pred_local, pred_visitante')
+        .in('match_id', liveIds)
+    : { data: [] }
+
+  const initialLiveMatches = liveMatchesAll.map((m) => ({
+    id: m.id,
+    goles_local: m.goles_local,
+    goles_visitante: m.goles_visitante,
+  }))
+  const initialLivePreds = (livePredsRaw ?? []) as {
+    participant_id: string; match_id: string; pred_local: number; pred_visitante: number
+  }[]
 
   return (
     <div className="space-y-6">
@@ -73,7 +91,11 @@ export default async function Home() {
         </p>
       </div>
 
-      <LeaderboardTable initialScores={scores as Parameters<typeof LeaderboardTable>[0]['initialScores'] ?? []} />
+      <LeaderboardTable
+        initialScores={scores as Parameters<typeof LeaderboardTable>[0]['initialScores'] ?? []}
+        initialLiveMatches={initialLiveMatches}
+        initialLivePreds={initialLivePreds}
+      />
 
       {recentMatches.length > 0 && (
         <div>
