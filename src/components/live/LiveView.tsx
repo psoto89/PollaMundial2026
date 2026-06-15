@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { scoreGroupMatch } from '@/lib/scoring'
 
@@ -173,7 +174,12 @@ function LiveMatchCard({ match, preds, allParticipants }: LiveMatchCardProps) {
             <span className="live-dot w-2 h-2 rounded-full bg-[#f85149]" />
             EN VIVO {match.minuto !== null ? `· ${match.minuto}'` : ''}
           </span>
-          <span className="text-xs text-[#768390]">Grupo {match.grupo}</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-[#768390]">Grupo {match.grupo}</span>
+            <Link href={`/match/${match.id}`} className="text-xs text-[#9EE637] hover:underline">
+              Ver pronósticos →
+            </Link>
+          </div>
         </div>
         <div className="flex items-center justify-between gap-4 mt-4">
           <span className="text-lg font-bold text-[#e6edf3] flex-1 text-right">
