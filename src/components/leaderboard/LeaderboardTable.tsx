@@ -10,6 +10,7 @@ interface ScoreRow {
   participant_id: string
   total: number
   total_grupos: number
+  total_eliminacion: number
   total_clasificados: number
   total_semis: number
   total_preguntas: number
@@ -76,7 +77,9 @@ export default function LeaderboardTable({
     return scores
       .map((row) => {
         const liveDelta = liveDeltaByParticipant.get(row.participant_id) ?? 0
-        return { row, liveDelta, effectiveTotal: row.total + liveDelta }
+        // Puntos SOLO de partidos (grupos + eliminación). El tentativo en vivo es de partidos.
+        const partidos = row.total_grupos + row.total_eliminacion + liveDelta
+        return { row, liveDelta, partidos, effectiveTotal: row.total + liveDelta }
       })
       .sort((a, b) => b.effectiveTotal - a.effectiveTotal)
   }, [scores, liveDeltaByParticipant])
@@ -189,16 +192,22 @@ export default function LeaderboardTable({
             <th className="text-right pb-3 px-2 hidden sm:table-cell">Clasif.</th>
             <th className="text-right pb-3 px-2 hidden sm:table-cell">Semis</th>
             <th className="text-right pb-3 px-2 hidden sm:table-cell">Preguntas</th>
+            <th className="text-right pb-3 px-2 text-[#9EE637]">
+              Partidos
+              <span className="block text-[#444d56] text-[10px] font-normal normal-case tracking-normal">
+                solo partidos
+              </span>
+            </th>
             <th className="text-right pb-3 pl-4 font-bold text-[#e6edf3]">
               Total
               <span className="block text-[#444d56] text-[10px] font-normal normal-case tracking-normal">
-                toca para ver desglose
+                todo
               </span>
             </th>
           </tr>
         </thead>
         <tbody>
-          {displayScores.map(({ row, liveDelta, effectiveTotal }, idx) => {
+          {displayScores.map(({ row, liveDelta, partidos, effectiveTotal }, idx) => {
             const flash = flashMap.get(row.participant_id)
             const participante = row.participants
             const href = `/participant/${participante?.id ?? row.participant_id}`
@@ -242,19 +251,24 @@ export default function LeaderboardTable({
                   {row.total_preguntas}
                 </td>
 
-                {/* Total (con tentativo en vivo resaltado) */}
-                <td className="py-3 pl-4 text-right">
+                {/* Partidos (solo grupos + eliminación, con tentativo en vivo) */}
+                <td className="py-3 px-2 text-right">
                   <span className="inline-flex items-center gap-1.5 justify-end">
                     {isLiveScoring && (
                       <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
-                        +{liveDelta} en vivo
+                        +{liveDelta}
                       </span>
                     )}
-                    <span className="font-bold tabular-nums text-base text-[#9EE637]">
-                      {effectiveTotal}
-                    </span>
-                    <span className="text-[#768390] text-xs font-normal">pts</span>
+                    <span className="font-semibold tabular-nums text-[#9EE637]">{partidos}</span>
                   </span>
+                </td>
+
+                {/* Total (todo) */}
+                <td className="py-3 pl-4 text-right">
+                  <span className="font-bold tabular-nums text-base text-[#e6edf3]">
+                    {effectiveTotal}
+                  </span>
+                  <span className="text-[#768390] text-xs font-normal"> pts</span>
                 </td>
               </tr>
             )
