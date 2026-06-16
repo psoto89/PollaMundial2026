@@ -33,7 +33,8 @@ export default function LoginPage() {
 
     if (error) {
       setStatus('error')
-      setErrorMsg('No se pudo enviar el enlace. Revisa el correo e intenta de nuevo.')
+      // Mostrar el motivo real para poder diagnosticar (SMTP, rate limit, etc.)
+      setErrorMsg(`No se pudo enviar el enlace: ${error.message ?? 'intenta de nuevo'}`)
       return
     }
     setStatus('sent')
