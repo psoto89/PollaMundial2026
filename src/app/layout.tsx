@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import Link from 'next/link'
 import AuthNav from '@/components/nav/AuthNav'
+import BrandLogo from '@/components/nav/BrandLogo'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -15,10 +16,10 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Gran Polla Mundial 2026',
+  title: 'Mundial 2026',
   description: 'Tabla de posiciones y resultados en vivo de la polla del Mundial 2026',
   openGraph: {
-    title: 'Gran Polla Mundial 2026',
+    title: 'Mundial 2026',
     description: 'Tabla de posiciones y resultados en vivo',
     type: 'website',
   },
@@ -36,9 +37,7 @@ export default function RootLayout({
         {/* Navbar */}
         <header className="sticky top-0 z-50 border-b border-[#30363d] bg-[#0d1117]/90 backdrop-blur-sm">
           <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
-            <Link href="/" className="font-bold text-[#9EE637] tracking-tight text-lg">
-              🌍 Polla Mundial 2026
-            </Link>
+            <BrandLogo />
             <nav className="flex items-center gap-4 text-sm">
               <Link
                 href="/live"

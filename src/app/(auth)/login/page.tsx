@@ -1,12 +1,22 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+
+  // Si ya hay sesión, no mostrar el login: ir directo a Mi Polla
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) router.replace('/mis-pronosticos')
+    })
+  }, [router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
