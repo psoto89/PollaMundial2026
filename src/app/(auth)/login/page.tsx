@@ -33,8 +33,10 @@ export default function LoginPage() {
 
     if (error) {
       setStatus('error')
-      // Mostrar el motivo real para poder diagnosticar (SMTP, rate limit, etc.)
-      setErrorMsg(`No se pudo enviar el enlace: ${error.message ?? 'intenta de nuevo'}`)
+      // Mostrar status + code + message para diagnosticar (SMTP 500 vs rate limit 429, etc.)
+      const e = error as { status?: number; code?: string; name?: string; message?: string }
+      const detalle = e.message && e.message.trim() ? e.message : (e.code ?? e.name ?? 'sin mensaje')
+      setErrorMsg(`No se pudo enviar el enlace [${e.status ?? '?'} · ${e.code ?? '—'}]: ${detalle}`)
       return
     }
     setStatus('sent')
