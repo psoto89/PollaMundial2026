@@ -1,9 +1,8 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
-import Link from 'next/link'
-import AuthNav from '@/components/nav/AuthNav'
 import BrandLogo from '@/components/nav/BrandLogo'
+import SiteNav from '@/components/nav/SiteNav'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -38,28 +37,7 @@ export default function RootLayout({
         <header className="sticky top-0 z-50 border-b border-[#30363d] bg-[#0d1117]/90 backdrop-blur-sm">
           <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
             <BrandLogo />
-            <nav className="flex items-center gap-4 text-sm">
-              <Link
-                href="/live"
-                className="flex items-center gap-1.5 text-[#768390] hover:text-[#e6edf3] transition-colors"
-              >
-                <span className="live-dot w-2 h-2 rounded-full bg-[#f85149] inline-block" />
-                EN VIVO
-              </Link>
-              <Link
-                href="/reglas"
-                className="text-[#768390] hover:text-[#e6edf3] transition-colors"
-              >
-                Reglas
-              </Link>
-              <Link
-                href="/premiacion"
-                className="text-[#768390] hover:text-[#e6edf3] transition-colors"
-              >
-                Premio
-              </Link>
-              <AuthNav />
-            </nav>
+            <SiteNav />
           </div>
         </header>
 
