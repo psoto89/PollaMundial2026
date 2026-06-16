@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import type { ParsedExcel } from '@/types'
 
 type Step = 'upload' | 'preview' | 'done'
@@ -163,12 +164,12 @@ export default function AdminImportPage() {
             >
               Importar otro archivo
             </button>
-            <a
+            <Link
               href="/"
               className="px-4 py-2 rounded-lg bg-[#9EE637] text-[#0d1117] font-semibold text-sm hover:opacity-90 transition-opacity"
             >
               Ver tabla →
-            </a>
+            </Link>
           </div>
         </div>
       )}
