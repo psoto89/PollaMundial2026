@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 const LiveLink = ({ onClick }: { onClick?: () => void }) => (
@@ -18,6 +18,7 @@ const LiveLink = ({ onClick }: { onClick?: () => void }) => (
 
 export default function SiteNav() {
   const router = useRouter()
+  const pathname = usePathname()
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [open, setOpen] = useState(false)
 
@@ -29,6 +30,9 @@ export default function SiteNav() {
     })
     return () => sub.subscription.unsubscribe()
   }, [])
+
+  // En el panel admin no mostramos el menú público (tiene su propio login/nav)
+  if (pathname?.startsWith('/admin')) return null
 
   async function logout() {
     const supabase = createClient()
