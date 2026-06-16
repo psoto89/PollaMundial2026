@@ -139,7 +139,28 @@ export default function LeaderboardTable({
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, refetchLive)
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
+    // Refresco en segundo plano (no depende de Realtime ni de recargar la página):
+    // si hay partidos en vivo, le pide al backend marcadores frescos de TheSportsDB
+    // y vuelve a leer todo. Así la tabla se actualiza sola con cada gol.
+    async function backgroundRefresh() {
+      const { data: lm } = await supabase
+        .from('matches')
+        .select('id')
+        .eq('estado', 'live')
+      const hayVivo = (lm ?? []).length > 0
+      if (hayVivo) {
+        try { await fetch('/api/live/poll', { method: 'POST' }) } catch {}
+      }
+      await refetchLive()
+      await refetchScores()
+    }
+
+    const interval = setInterval(backgroundRefresh, 30_000)
+
+    return () => {
+      supabase.removeChannel(channel)
+      clearInterval(interval)
+    }
   }, [])
 
   if (scores.length === 0) {
