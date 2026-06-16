@@ -1,6 +1,6 @@
 // Tipos globales del proyecto Gran Polla Mundial 2026
 
-export type Fase = 'grupos' | 'dieciseisavos' | 'cuartos' | 'semis' | 'final'
+export type Fase = 'grupos' | 'dieciseisavos' | 'octavos' | 'cuartos' | 'semis' | 'tercer_puesto' | 'final'
 export type EstadoPartido = 'scheduled' | 'live' | 'finished'
 export type Puesto = 'campeon' | 'subcampeon' | '3' | '4'
 export type PreguntaKey = 'p1' | 'p2' | 'p3' | 'p4' | 'p5' | 'p6'
@@ -82,6 +82,7 @@ export interface ScoresCache {
   participant_id: string
   total: number
   total_grupos: number
+  total_eliminacion: number
   total_clasificados: number
   total_semis: number
   total_preguntas: number
