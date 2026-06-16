@@ -15,7 +15,7 @@ export default function BrandLogo() {
       {imgOk ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src="/logo.png"
+          src="/logo.webp"
           alt="Mundial 2026"
           width={28}
           height={28}
