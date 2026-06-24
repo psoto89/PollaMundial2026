@@ -16,36 +16,33 @@ export interface KnockoutMatch {
   predVisitante: number | null
 }
 
-export default function MisPronosticosForm({
-  matches,
-  deadlineMinutes,
-}: {
-  matches: KnockoutMatch[]
-  deadlineMinutes: number
-}) {
-  return (
-    <div className="space-y-3">
-      {matches.map((m) => (
-        <KnockoutRow key={m.id} match={m} deadlineMinutes={deadlineMinutes} />
-      ))}
-    </div>
-  )
-}
-
-function fmtKickoff(iso: string | null): string {
+export function fmtKickoff(iso: string | null): string {
   if (!iso) return 'Por definir'
   return new Date(iso).toLocaleString('es-CO', {
     weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   })
 }
 
-function KnockoutRow({ match, deadlineMinutes }: { match: KnockoutMatch; deadlineMinutes: number }) {
+/**
+ * Fila de un partido de eliminación con equipos ya conocidos.
+ * `editable` lo controla la ronda: si la fase no está habilitada, nunca se
+ * muestran inputs aunque el deadline siga abierto (se ve marcador/pronóstico).
+ */
+export function KnockoutRow({
+  match,
+  deadlineMinutes,
+  editable = true,
+}: {
+  match: KnockoutMatch
+  deadlineMinutes: number
+  editable?: boolean
+}) {
   const [local, setLocal] = useState(match.predLocal?.toString() ?? '')
   const [visitante, setVisitante] = useState(match.predVisitante?.toString() ?? '')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [msg, setMsg] = useState('')
   const [closeLabel, setCloseLabel] = useState<string>('')
-  const [isOpen, setIsOpen] = useState(false)
+  const [windowOpen, setWindowOpen] = useState(false)
 
   const deadlineMs = match.kickoffAt
     ? new Date(match.kickoffAt).getTime() - deadlineMinutes * 60_000
@@ -54,13 +51,13 @@ function KnockoutRow({ match, deadlineMinutes }: { match: KnockoutMatch; deadlin
   // Countdown + estado abierto/cerrado en tiempo real
   useEffect(() => {
     if (deadlineMs === null || match.estado !== 'scheduled') {
-      setIsOpen(false)
+      setWindowOpen(false)
       return
     }
     const tick = () => {
       const diff = deadlineMs - Date.now()
-      if (diff <= 0) { setIsOpen(false); setCloseLabel('Cerrado'); return }
-      setIsOpen(true)
+      if (diff <= 0) { setWindowOpen(false); setCloseLabel('Cerrado'); return }
+      setWindowOpen(true)
       const h = Math.floor(diff / 3_600_000)
       const min = Math.floor((diff % 3_600_000) / 60_000)
       setCloseLabel(h > 0 ? `Cierra en ${h}h ${min}m` : `Cierra en ${min}m`)
@@ -69,6 +66,9 @@ function KnockoutRow({ match, deadlineMinutes }: { match: KnockoutMatch; deadlin
     const id = setInterval(tick, 30_000)
     return () => clearInterval(id)
   }, [deadlineMs, match.estado])
+
+  // Solo se puede pronosticar si la ronda está habilitada Y la ventana abierta
+  const isOpen = editable && windowOpen
 
   async function handleSave() {
     const pl = parseInt(local, 10)

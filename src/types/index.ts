@@ -36,6 +36,7 @@ export interface Match {
   minuto: number | null
   kickoff_at: string | null
   external_id: string | null
+  bracket_slot: string | null // posición en la plantilla de eliminación (ver config/bracket2026.ts)
   // joins
   equipo_local?: Team
   equipo_visitante?: Team

@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { verifyAdminSession } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { scoreGroupMatch } from '@/lib/scoring'
+import { syncQualifyFromResults } from '@/lib/autoQualify'
 
 // ─── Schemas individuales ─────────────────────────────────────
 const matchResultSchema = z.object({
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
       if (!parsed.success) {
         return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
       }
-      return await handleMatchResult(db, parsed.data)
+      return await handleMatchResult(db, parsed.data, req)
     }
 
     if (body.type === 'qualify' || body.type === 'semis' || body.type === 'question') {
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
 async function handleMatchResult(
   db: ReturnType<typeof createAdminClient>,
   data: MatchResultInput,
+  req: NextRequest,
 ) {
   const { error } = await db
     .from('matches')
@@ -86,6 +88,27 @@ async function handleMatchResult(
   // Si el partido terminó, recalcular puntos de grupos automáticamente
   if (data.estado === 'finished' && data.golesLocal !== null) {
     await recalcGroupScores(db)
+
+    // Posiciones de grupos dinámicas: al cerrar un grupo, calcular automáticamente
+    // 1º/2º (y los mejores terceros cuando cierren los 12 grupos) y recalcular
+    // clasificados. Bloque aditivo y NO bloqueante: si falla, no rompe el guardado
+    // del partido ni el recalc de grupos.
+    try {
+      const { changed } = await syncQualifyFromResults(db)
+      if (changed) {
+        // Recalc completo (actualiza total_clasificados) vía endpoint interno
+        // ya soportado con x-internal-secret.
+        const res = await fetch(new URL('/api/admin/recalc', req.url), {
+          method: 'POST',
+          headers: { 'x-internal-secret': process.env.ADMIN_SESSION_SECRET ?? '' },
+        })
+        if (!res.ok) {
+          console.error('[handleMatchResult] recalc interno falló:', res.status)
+        }
+      }
+    } catch (e) {
+      console.error('[handleMatchResult] auto-qualify falló (no bloqueante)', e)
+    }
   }
 
   return NextResponse.json({ ok: true })

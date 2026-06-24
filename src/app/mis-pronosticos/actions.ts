@@ -45,7 +45,17 @@ export async function savePrediction(
     return { ok: false, error: 'Partido no disponible para pronóstico' }
   }
 
-  const { data: cfg } = await supabase.from('app_config').select('deadline_minutes').single()
+  const { data: cfg } = await supabase
+    .from('app_config')
+    .select('deadline_minutes, open_rounds')
+    .single()
+
+  // La ronda debe estar habilitada por el admin (se abre "por ronda")
+  const openRounds = (cfg?.open_rounds as string[] | null) ?? []
+  if (!openRounds.includes(match.fase)) {
+    return { ok: false, error: 'Esta ronda aún no está habilitada' }
+  }
+
   const deadlineMin = cfg?.deadline_minutes ?? 60
   const deadline = new Date(match.kickoff_at).getTime() - deadlineMin * 60_000
   if (Date.now() >= deadline) {
