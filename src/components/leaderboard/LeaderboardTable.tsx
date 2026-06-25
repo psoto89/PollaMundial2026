@@ -289,7 +289,7 @@ export default function LeaderboardTable({
         </p>
       )}
       <p className="text-xs text-[#768390] mb-2">
-        Toca una fila para ver de dónde salen sus puntos
+        <span className="text-[#9EE637] font-medium">Partidos</span> = solo partidos · <span className="text-[#e6edf3] font-medium">Total</span> = todo · toca una fila para ver el desglose
       </p>
       <table className="w-full table-fixed text-sm min-w-[460px]">
         <colgroup>
@@ -301,23 +301,13 @@ export default function LeaderboardTable({
           <col className="w-[16%]" />
         </colgroup>
         <thead>
-          <tr className="border-b border-[#30363d] text-[#768390] text-xs uppercase tracking-wide align-bottom">
+          <tr className="border-b border-[#30363d] text-[#768390] text-xs uppercase tracking-wide align-middle">
             <th className="text-left pb-3 pr-2">#</th>
             <th className="text-left pb-3 pr-4">Participante</th>
-            <th className="text-right pb-3 px-2 text-[#9EE637]">
-              Partidos
-              <span className="block text-[#444d56] text-[10px] font-normal normal-case tracking-normal">
-                solo partidos
-              </span>
-            </th>
+            <th className="text-right pb-3 px-2 text-[#9EE637]">Partidos</th>
             <th className="text-right pb-3 px-2">Clasif.</th>
             <th className="text-right pb-3 px-2">Preguntas</th>
-            <th className="text-right pb-3 pl-4 font-bold text-[#e6edf3]">
-              Total
-              <span className="block text-[#444d56] text-[10px] font-normal normal-case tracking-normal">
-                todo
-              </span>
-            </th>
+            <th className="text-right pb-3 pl-4 font-bold text-[#e6edf3]">Total</th>
           </tr>
         </thead>
         <tbody>
