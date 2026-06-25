@@ -288,21 +288,22 @@ export default function LeaderboardTable({
           Puntos <span className="text-[#9EE637] font-semibold">en vivo</span> tentativos según el marcador actual
         </p>
       )}
+      <p className="text-xs text-[#768390] mb-2">
+        Toca una fila para ver de dónde salen sus puntos
+      </p>
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-[#30363d] text-[#768390] text-xs uppercase tracking-wide">
             <th className="text-left pb-3 pr-4 w-8">#</th>
             <th className="text-left pb-3 pr-4">Participante</th>
-            <th className="text-right pb-3 px-2 hidden sm:table-cell">Grupos</th>
-            <th className="text-right pb-3 px-2 hidden sm:table-cell">Clasif.</th>
-            <th className="text-right pb-3 px-2 hidden sm:table-cell">Semis</th>
-            <th className="text-right pb-3 px-2 hidden sm:table-cell">Preguntas</th>
             <th className="text-right pb-3 px-2 text-[#9EE637]">
               Partidos
               <span className="block text-[#444d56] text-[10px] font-normal normal-case tracking-normal">
                 solo partidos
               </span>
             </th>
+            <th className="text-right pb-3 px-2">Clasif.</th>
+            <th className="text-right pb-3 px-2">Preguntas</th>
             <th className="text-right pb-3 pl-4 font-bold text-[#e6edf3]">
               Total
               <span className="block text-[#444d56] text-[10px] font-normal normal-case tracking-normal">
@@ -346,19 +347,6 @@ export default function LeaderboardTable({
                   </Link>
                 </td>
 
-                <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390] tabular-nums">
-                  {row.total_grupos}
-                </td>
-                <td className={`py-3 px-2 text-right hidden sm:table-cell tabular-nums ${clasifLive > 0 ? 'text-[#9EE637] font-semibold' : 'text-[#768390]'}`}>
-                  {row.total_clasificados + clasifLive}
-                </td>
-                <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390] tabular-nums">
-                  {row.total_semis}
-                </td>
-                <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390] tabular-nums">
-                  {row.total_preguntas}
-                </td>
-
                 {/* Partidos (solo grupos + eliminación, con tentativo en vivo) */}
                 <td className="py-3 px-2 text-right">
                   <span className="inline-flex items-center gap-1.5 justify-end">
@@ -369,6 +357,25 @@ export default function LeaderboardTable({
                     )}
                     <span className="font-semibold tabular-nums text-[#9EE637]">{partidos}</span>
                   </span>
+                </td>
+
+                {/* Clasificación (con tentativo en vivo) */}
+                <td className="py-3 px-2 text-right">
+                  <span className="inline-flex items-center gap-1.5 justify-end">
+                    {clasifLive > 0 && (
+                      <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
+                        +{clasifLive}
+                      </span>
+                    )}
+                    <span className={`tabular-nums ${clasifLive > 0 ? 'text-[#9EE637] font-semibold' : 'text-[#768390]'}`}>
+                      {row.total_clasificados + clasifLive}
+                    </span>
+                  </span>
+                </td>
+
+                {/* Preguntas */}
+                <td className="py-3 px-2 text-right text-[#768390] tabular-nums">
+                  {row.total_preguntas}
                 </td>
 
                 {/* Total (todo) + chevron de expandir */}
@@ -399,7 +406,7 @@ export default function LeaderboardTable({
               {/* Panel de desglose: de dónde vienen los puntos (se mueve en vivo) */}
               {isOpen && (
                 <tr className="border-b border-[#21262d] bg-[#0d1117]">
-                  <td colSpan={8} className="px-4 pb-4 pt-1">
+                  <td colSpan={6} className="px-4 pb-4 pt-1">
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       <BreakdownChip label="Grupos" value={row.total_grupos} live={live.grupos} />
                       <BreakdownChip label="Eliminación" value={row.total_eliminacion} live={live.eliminacion} />
