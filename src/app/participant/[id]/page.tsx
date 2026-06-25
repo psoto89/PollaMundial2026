@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
-import { scoreGroupMatch, scoreQualify, scoreSemis, answersMatch } from '@/lib/scoring'
+import { scoreGroupMatch, scoreQualify, scoreSemis, answersMatch, type QualifyOfficial } from '@/lib/scoring'
+import { computeGroupStandings } from '@/lib/standings'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Puesto, PreguntaKey } from '@/types'
@@ -104,6 +105,63 @@ function buildSemisOfficial(rows: OfficialRow[]) {
   return official
 }
 
+/**
+ * Clasificados PROVISIONALES (1º/2º) de los grupos que tienen partido en vivo y
+ * todavía no son oficiales. Reusa los partidos reales que ya vienen en groupPreds
+ * (no consulta extra) y la misma tabla de posiciones (computeGroupStandings).
+ * Los mejores terceros no son tentativos: solo se saben al cerrar los 12 grupos.
+ */
+function buildProvisionalQualify(groupPreds: GroupPredRow[], official: QualifyOfficial) {
+  const matchesByGroup = new Map<string, GroupPredRow['matches'][]>()
+  for (const gp of groupPreds) {
+    const m = gp.matches
+    if (!m || !m.grupo) continue
+    const list = matchesByGroup.get(m.grupo) ?? []
+    list.push(m)
+    matchesByGroup.set(m.grupo, list)
+  }
+
+  // Grupos ya oficiales (cerrados) → no tentativo
+  const officialGroups = new Set(Object.values(official.classified).map((c) => c.grupo))
+
+  const classified: QualifyOfficial['classified'] = {}
+  const liveGroups = new Set<string>()
+
+  for (const [grupo, ms] of matchesByGroup) {
+    if (officialGroups.has(grupo)) continue
+    if (!ms.some((m) => m?.estado === 'live')) continue // solo grupos con partido en vivo
+    liveGroups.add(grupo)
+
+    const teamNames = new Set<string>()
+    const standingMatches = []
+    for (const m of ms) {
+      if (!m) continue
+      const local = m.equipo_local?.nombre
+      const visita = m.equipo_visitante?.nombre
+      if (local) teamNames.add(local)
+      if (visita) teamNames.add(visita)
+      if (local && visita && m.goles_local !== null && m.goles_visitante !== null) {
+        standingMatches.push({
+          equipoLocalId: local,
+          equipoVisitanteId: visita,
+          golesLocal: m.goles_local,
+          golesVisitante: m.goles_visitante,
+        })
+      }
+    }
+    if (standingMatches.length === 0) continue
+
+    const teamsList = [...teamNames].map((n) => ({ teamId: n, teamNombre: n, grupo }))
+    const { rows } = computeGroupStandings(standingMatches, teamsList)
+    const p1 = rows.find((r) => r.posicion === 1)
+    const p2 = rows.find((r) => r.posicion === 2)
+    if (p1) classified[p1.teamNombre] = { grupo, posicion: 1 }
+    if (p2) classified[p2.teamNombre] = { grupo, posicion: 2 }
+  }
+
+  return { official: { classified, bestThirds: [] } as QualifyOfficial, liveGroups }
+}
+
 export default async function ParticipantPage({ params }: Props) {
   const { id } = await params
   const supabase = await createClient()
@@ -174,14 +232,20 @@ export default async function ParticipantPage({ params }: Props) {
   const hasQualifyOfficial = Object.keys(qualifyOfficial.classified).length > 0 || qualifyOfficial.bestThirds.length > 0
   const hasSemisOfficial = semisOfficial.semifinalistas.length > 0
 
-  // Proyección de puntos por pick en Clasificados
+  // Clasificados provisionales (1º/2º) de los grupos con partido en vivo
+  const provisionalQualify = buildProvisionalQualify(groupPreds, qualifyOfficial)
+
+  // Proyección de puntos por pick en Clasificados (definitivo + tentativo en vivo)
   const qualifyScorePerPick = qualifyPreds.map((pred) => {
     const teamNombre = pred.teams?.nombre ?? ''
-    const result = scoreQualify(
-      [{ grupo: pred.grupo, posicion: pred.posicion as 1 | 2 | 3, teamNombre }],
-      qualifyOfficial,
-    )
-    return { ...pred, pts: result.total }
+    const pick = { grupo: pred.grupo, posicion: pred.posicion as 1 | 2 | 3, teamNombre }
+    const pts = scoreQualify([pick], qualifyOfficial).total
+    const isLiveGroup = provisionalQualify.liveGroups.has(pred.grupo)
+    // Tentativo solo para 1º/2º (los terceros no se pueden anticipar)
+    const tentativePts = isLiveGroup && pred.posicion !== 3
+      ? scoreQualify([pick], provisionalQualify.official).total
+      : 0
+    return { ...pred, pts, tentativePts, isLiveGroup }
   })
 
   // Proyección de puntos por pick en Semis
@@ -212,6 +276,7 @@ export default async function ParticipantPage({ params }: Props) {
   const qualifyGrupos = Array.from(qualifyByGrupo.keys()).sort()
 
   const totalQualifyPts = qualifyScorePerPick.reduce((s, p) => s + p.pts, 0)
+  const totalQualifyTentative = qualifyScorePerPick.reduce((s, p) => s + p.tentativePts, 0)
   const totalSemisPts = semisScorePerPick.reduce((s, p) => s + p.pts, 0)
 
   return (
@@ -331,43 +396,67 @@ export default async function ParticipantPage({ params }: Props) {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-[#e6edf3]">Clasificados</h2>
-            {hasQualifyOfficial && (
-              <span className="text-sm font-bold text-[#9EE637]">+{totalQualifyPts} pts</span>
-            )}
+            <span className="inline-flex items-center gap-2">
+              {totalQualifyTentative > 0 && (
+                <span className="text-xs font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
+                  +{totalQualifyTentative} en vivo
+                </span>
+              )}
+              {hasQualifyOfficial && (
+                <span className="text-sm font-bold text-[#9EE637]">+{totalQualifyPts} pts</span>
+              )}
+            </span>
           </div>
-          <p className="text-xs text-[#768390] mb-3">
+          <p className="text-xs text-[#768390] mb-1">
             +4 por equipo clasificado · +4 adicional si acierta la posición · +4 por mejor tercero
           </p>
+          {provisionalQualify.liveGroups.size > 0 && (
+            <p className="text-xs text-[#768390] mb-3 flex items-center gap-1.5">
+              <span className="live-dot w-1.5 h-1.5 rounded-full bg-[#f85149]" />
+              <span className="text-[#9EE637] font-semibold">En verde</span> = tentativo provisional según el marcador en vivo (se fija al cerrar el grupo)
+            </p>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {qualifyGrupos.map((grupo) => {
               const picks = (qualifyByGrupo.get(grupo) ?? []).sort((a, b) => a.posicion - b.posicion)
               const grupoPts = picks.reduce((s, p) => s + p.pts, 0)
+              const grupoTent = picks.reduce((s, p) => s + p.tentativePts, 0)
+              const isLiveGroup = picks.some((p) => p.isLiveGroup)
               return (
-                <div key={grupo} className="bg-[#161b22] border border-[#30363d] rounded-lg p-3">
+                <div key={grupo} className={`bg-[#161b22] border rounded-lg p-3 ${isLiveGroup ? 'border-[#9EE637]/30' : 'border-[#30363d]'}`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-semibold text-[#768390]">Grupo {grupo}</span>
-                    {hasQualifyOfficial && grupoPts > 0 && (
+                    {grupoPts > 0 ? (
                       <span className="text-xs font-bold text-[#9EE637]">+{grupoPts}</span>
-                    )}
+                    ) : grupoTent > 0 ? (
+                      <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">+{grupoTent} en vivo</span>
+                    ) : null}
                   </div>
                   <div className="space-y-1.5">
-                    {picks.map((pick) => (
-                      <div key={pick.posicion} className="flex items-center gap-2">
-                        <span className="text-xs text-[#768390] w-8 shrink-0">{POSICION_LABELS[pick.posicion]}</span>
-                        <span className={`text-sm flex-1 ${pick.pts > 0 ? 'text-[#e6edf3]' : 'text-[#768390]'}`}>
-                          {pick.teams?.nombre ?? '—'}
-                        </span>
-                        <span className={`text-xs font-mono shrink-0 ${pick.pts > 0 ? 'text-[#9EE637] font-bold' : 'text-[#444d56]'}`}>
-                          {hasQualifyOfficial ? (pick.pts > 0 ? `+${pick.pts}` : '—') : '?'}
-                        </span>
-                      </div>
-                    ))}
+                    {picks.map((pick) => {
+                      const scoring = pick.pts > 0 || pick.tentativePts > 0
+                      return (
+                        <div key={pick.posicion} className="flex items-center gap-2">
+                          <span className="text-xs text-[#768390] w-8 shrink-0">{POSICION_LABELS[pick.posicion]}</span>
+                          <span className={`text-sm flex-1 ${scoring ? 'text-[#e6edf3]' : 'text-[#768390]'}`}>
+                            {pick.teams?.nombre ?? '—'}
+                          </span>
+                          <span className={`text-xs font-mono shrink-0 font-bold ${scoring ? 'text-[#9EE637]' : 'text-[#444d56]'}`}>
+                            {pick.pts > 0
+                              ? `+${pick.pts}`
+                              : pick.tentativePts > 0
+                                ? `+${pick.tentativePts}`
+                                : (hasQualifyOfficial || pick.isLiveGroup) ? '—' : '?'}
+                          </span>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )
             })}
           </div>
-          {!hasQualifyOfficial && (
+          {!hasQualifyOfficial && provisionalQualify.liveGroups.size === 0 && (
             <p className="text-xs text-[#444d56] mt-2">Puntos disponibles cuando se carguen los clasificados oficiales</p>
           )}
         </div>
