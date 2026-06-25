@@ -113,22 +113,23 @@ function triggerRecalc(): void {
 }
 
 /**
- * Tras un partido recién finalizado: cierra los grupos completos y escribe los
- * clasificados oficiales (1º/2º y mejores terceros) de forma automática, luego
- * dispara el recalc para que los puntos de Clasificados se reflejen al instante.
- * autoQualify es idempotente y solo procesa la fase de grupos; sus errores se
- * registran sin abortar el sync ni el recalc.
+ * Cierra los grupos completos y escribe los clasificados oficiales (1º/2º y
+ * mejores terceros) de forma automática e idempotente. Devuelve true si cambió
+ * official_results. Es seguro correrla en cada sync: solo procesa la fase de
+ * grupos y reescribe el mismo estado. Sus errores se registran sin abortar el
+ * sync. Al ser idempotente, sirve de backfill para grupos ya cerrados antes.
  */
-async function closeGroupsAndRecalc(
+async function reconcileQualifiers(
   db: ReturnType<typeof createAdminClient>,
   result: SyncResult,
-): Promise<void> {
+): Promise<boolean> {
   try {
-    await syncQualifyFromResults(db)
+    const q = await syncQualifyFromResults(db)
+    return q.changed
   } catch (e) {
     result.errors.push(`autoQualify: ${String(e)}`)
+    return false
   }
-  triggerRecalc()
 }
 
 // ─── Sync schedule (endpoint A) ───────────────────────────────────────────────
@@ -234,7 +235,10 @@ export async function syncSchedule(): Promise<SyncResult> {
       }
     }
 
-    if (anyNewlyFinished) await closeGroupsAndRecalc(db, result)
+    // syncSchedule corre poco (1×/día + botón manual en /admin): reconciliar
+    // siempre los clasificados oficiales hace de backfill de grupos ya cerrados.
+    const qualifyChanged = await reconcileQualifiers(db, result)
+    if (anyNewlyFinished || qualifyChanged) triggerRecalc()
 
   } catch (err) {
     result.errors.push(String(err))
@@ -321,7 +325,11 @@ export async function syncLive(): Promise<SyncResult> {
       }
     }
 
-    if (anyNewlyFinished) await closeGroupsAndRecalc(db, result)
+    // syncLive corre cada minuto: solo reconciliar cuando algo recién finalizó.
+    if (anyNewlyFinished) {
+      await reconcileQualifiers(db, result)
+      triggerRecalc()
+    }
 
   } catch (err) {
     result.errors.push(String(err))
