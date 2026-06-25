@@ -11,6 +11,7 @@
  */
 import { createAdminClient } from '@/lib/supabase/admin'
 import { mapTsdbStatus, tsdbTeamToDb, teamPairKey, orientScores } from '@/config/theSportsDbMap'
+import { syncQualifyFromResults } from '@/lib/autoQualify'
 
 const LEAGUE_ID  = process.env.WORLDCUP_LEAGUE_ID ?? '4429'
 const BASE_URL   = 'https://www.thesportsdb.com/api/v2/json'
@@ -109,6 +110,25 @@ function triggerRecalc(): void {
     method: 'POST',
     headers: { 'x-internal-secret': secret },
   }).catch(() => {})
+}
+
+/**
+ * Tras un partido recién finalizado: cierra los grupos completos y escribe los
+ * clasificados oficiales (1º/2º y mejores terceros) de forma automática, luego
+ * dispara el recalc para que los puntos de Clasificados se reflejen al instante.
+ * autoQualify es idempotente y solo procesa la fase de grupos; sus errores se
+ * registran sin abortar el sync ni el recalc.
+ */
+async function closeGroupsAndRecalc(
+  db: ReturnType<typeof createAdminClient>,
+  result: SyncResult,
+): Promise<void> {
+  try {
+    await syncQualifyFromResults(db)
+  } catch (e) {
+    result.errors.push(`autoQualify: ${String(e)}`)
+  }
+  triggerRecalc()
 }
 
 // ─── Sync schedule (endpoint A) ───────────────────────────────────────────────
@@ -214,7 +234,7 @@ export async function syncSchedule(): Promise<SyncResult> {
       }
     }
 
-    if (anyNewlyFinished) triggerRecalc()
+    if (anyNewlyFinished) await closeGroupsAndRecalc(db, result)
 
   } catch (err) {
     result.errors.push(String(err))
@@ -301,7 +321,7 @@ export async function syncLive(): Promise<SyncResult> {
       }
     }
 
-    if (anyNewlyFinished) triggerRecalc()
+    if (anyNewlyFinished) await closeGroupsAndRecalc(db, result)
 
   } catch (err) {
     result.errors.push(String(err))
