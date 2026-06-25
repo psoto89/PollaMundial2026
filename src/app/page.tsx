@@ -124,7 +124,7 @@ export default async function Home() {
 
   return (
     <div className="space-y-6">
-      {liveMatchesAll.length > 0 && <LiveBanner matches={liveMatchesAll} />}
+      <LiveBanner initialMatches={liveMatchesAll} />
 
       <div>
         <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight">

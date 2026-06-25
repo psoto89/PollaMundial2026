@@ -1,6 +1,8 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
 
 interface LiveMatch {
   id: string
@@ -12,10 +14,42 @@ interface LiveMatch {
 }
 
 interface Props {
-  matches: LiveMatch[]
+  initialMatches: LiveMatch[]
 }
 
-export default function LiveBanner({ matches }: Props) {
+export default function LiveBanner({ initialMatches }: Props) {
+  const [matches, setMatches] = useState<LiveMatch[]>(initialMatches)
+
+  // Refresco en vivo: realtime sobre matches + fallback cada 30s. Lee el estado
+  // fresco de la BD (que actualizan el cron y el poll de la tabla) sin recargar.
+  useEffect(() => {
+    const supabase = createClient()
+
+    async function refetch() {
+      const { data } = await supabase
+        .from('matches')
+        .select(`
+          id, goles_local, goles_visitante, minuto,
+          equipo_local:teams!equipo_local_id(nombre),
+          equipo_visitante:teams!equipo_visitante_id(nombre)
+        `)
+        .eq('estado', 'live')
+      setMatches((data ?? []) as unknown as LiveMatch[])
+    }
+
+    const channel = supabase
+      .channel('livebanner-matches')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, refetch)
+      .subscribe()
+
+    const interval = setInterval(refetch, 30_000)
+
+    return () => {
+      supabase.removeChannel(channel)
+      clearInterval(interval)
+    }
+  }, [])
+
   if (matches.length === 0) return null
 
   return (
