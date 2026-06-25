@@ -94,18 +94,26 @@ export function scoreQualify(
   let clasificado = 0
   let posicion = 0
 
+  // Mapas normalizados (sin acentos/mayúsculas/espacios) para tolerar diferencias
+  // entre los nombres del pronóstico y los oficiales (ej: "MEXICO" vs "México").
+  const classifiedNorm = new Map<string, { grupo: string; posicion: 1 | 2 }>()
+  for (const [team, entry] of Object.entries(official.classified)) {
+    classifiedNorm.set(normalizeText(team), entry)
+  }
+  const bestThirdsNorm = new Set(official.bestThirds.map(normalizeText))
+
   for (const pred of preds) {
-    const normTeam = pred.teamNombre
+    const normTeam = normalizeText(pred.teamNombre)
 
     if (pred.posicion === 3) {
       // Mejor tercero: +4 si está en la lista oficial de mejores terceros
-      if (official.bestThirds.includes(normTeam)) {
+      if (bestThirdsNorm.has(normTeam)) {
         clasificado += 4
         // Sin bonus de posición exacta para terceros
       }
     } else {
       // Posición 1 o 2
-      const officialEntry = official.classified[normTeam]
+      const officialEntry = classifiedNorm.get(normTeam)
       if (officialEntry) {
         // El equipo clasificó (en cualquier posición del grupo)
         clasificado += 4
@@ -156,11 +164,19 @@ export function scoreSemis(
   let semifinalista = 0
   let puestoExacto = 0
 
+  // Normalizar ambos lados para tolerar diferencias de acentos/mayúsculas.
+  const semifinalistasNorm = new Set(official.semifinalistas.map(normalizeText))
+  const puestosExactosNorm = {} as Record<Puesto, string>
+  for (const [puesto, team] of Object.entries(official.puestosExactos)) {
+    puestosExactosNorm[puesto as Puesto] = normalizeText(team)
+  }
+
   for (const pred of preds) {
-    const esSemifinalista = official.semifinalistas.includes(pred.teamNombre)
+    const normTeam = normalizeText(pred.teamNombre)
+    const esSemifinalista = semifinalistasNorm.has(normTeam)
     if (esSemifinalista) {
       semifinalista += 10
-      if (official.puestosExactos[pred.puesto] === pred.teamNombre) {
+      if (puestosExactosNorm[pred.puesto] === normTeam) {
         puestoExacto += BONUS_PUESTO[pred.puesto]
       }
     }

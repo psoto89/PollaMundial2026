@@ -24,12 +24,13 @@ export async function GET(req: NextRequest) {
     const windowStart = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString()
     const windowEnd   = new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString()
 
-    const { data: activeMatches } = await db
+    // head:true no devuelve filas (data siempre null); el conteo va en `count`.
+    const { count } = await db
       .from('matches')
       .select('id', { count: 'exact', head: true })
       .or(`estado.eq.live,and(kickoff_at.gte.${windowStart},kickoff_at.lte.${windowEnd},estado.eq.scheduled)`)
 
-    if (!activeMatches) {
+    if (!count) {
       return NextResponse.json({ ok: true, skipped: true, reason: 'no_active_window' })
     }
 

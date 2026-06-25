@@ -75,15 +75,25 @@ export async function POST(req: NextRequest) {
       return teamIdByNombre.get(nombre) ?? teamIdByNormalized.get(normalizeName(nombre))
     }
 
-    // 2. Upsert partidos de grupo
-    const matchRows = preview.matches.map((m) => ({
-      fase: 'grupos' as const,
-      grupo: m.grupo,
-      equipo_local_id: teamIdByNombre.get(m.localTeam)!,
-      equipo_visitante_id: teamIdByNombre.get(m.visitanteTeam)!,
-      match_index: m.matchIndex,
-      estado: 'scheduled' as const,
-    }))
+    // 2. Upsert partidos de grupo — usar lookupTeamId (con normalización) y
+    // descartar los que no mapean para no insertar equipo_*_id undefined.
+    const matchRows = preview.matches
+      .map((m) => ({
+        fase: 'grupos' as const,
+        grupo: m.grupo,
+        equipo_local_id: lookupTeamId(m.localTeam),
+        equipo_visitante_id: lookupTeamId(m.visitanteTeam),
+        match_index: m.matchIndex,
+        estado: 'scheduled' as const,
+      }))
+      .filter((r) => r.equipo_local_id && r.equipo_visitante_id) as {
+      fase: 'grupos'
+      grupo: string
+      equipo_local_id: string
+      equipo_visitante_id: string
+      match_index: number
+      estado: 'scheduled'
+    }[]
     if (matchRows.length > 0) {
       const { error: matchError } = await db
         .from('matches')
