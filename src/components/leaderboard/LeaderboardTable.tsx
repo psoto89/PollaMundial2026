@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { Fragment, useEffect, useState, useRef, useMemo } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { scoreGroupMatch } from '@/lib/scoring'
 
@@ -24,6 +23,7 @@ interface ScoreRow {
 
 interface LiveMatchLite {
   id: string
+  fase: string | null
   goles_local: number | null
   goles_visitante: number | null
 }
@@ -46,16 +46,26 @@ export default function LeaderboardTable({
   initialLiveMatches = [],
   initialLivePreds = [],
 }: Props) {
-  const router = useRouter()
   const [scores, setScores] = useState<ScoreRow[]>(initialScores)
   const [liveMatches, setLiveMatches] = useState<LiveMatchLite[]>(initialLiveMatches)
   const [livePreds, setLivePreds] = useState<LivePred[]>(initialLivePreds)
   const prevRanks = useRef<Map<string, number>>(new Map())
   const [flashMap, setFlashMap] = useState<Map<string, 'up' | 'down'>>(new Map())
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
-  // ── Puntos tentativos en vivo por participante ──────────────────────────────
+  const toggleExpanded = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  // ── Puntos tentativos en vivo por participante, separados por bucket ─────────
+  // grupos vs eliminación según la fase del partido en vivo, para que el desglose
+  // se mueva en el bucket correcto igual que la columna Partidos.
   const liveDeltaByParticipant = useMemo(() => {
-    const delta = new Map<string, number>()
+    const delta = new Map<string, { grupos: number; eliminacion: number }>()
     if (liveMatches.length === 0) return delta
     const scoreByMatch = new Map(liveMatches.map((m) => [m.id, m]))
     for (const pred of livePreds) {
@@ -65,7 +75,11 @@ export default function LeaderboardTable({
         { predLocal: pred.pred_local, predVisitante: pred.pred_visitante },
         { golesLocal: m.goles_local, golesVisitante: m.goles_visitante },
       ).total
-      if (pts > 0) delta.set(pred.participant_id, (delta.get(pred.participant_id) ?? 0) + pts)
+      if (pts <= 0) continue
+      const cur = delta.get(pred.participant_id) ?? { grupos: 0, eliminacion: 0 }
+      if (m.fase === 'grupos') cur.grupos += pts
+      else cur.eliminacion += pts
+      delta.set(pred.participant_id, cur)
     }
     return delta
   }, [liveMatches, livePreds])
@@ -76,10 +90,11 @@ export default function LeaderboardTable({
   const displayScores = useMemo(() => {
     return scores
       .map((row) => {
-        const liveDelta = liveDeltaByParticipant.get(row.participant_id) ?? 0
+        const live = liveDeltaByParticipant.get(row.participant_id) ?? { grupos: 0, eliminacion: 0 }
+        const liveDelta = live.grupos + live.eliminacion
         // Puntos SOLO de partidos (grupos + eliminación). El tentativo en vivo es de partidos.
         const partidos = row.total_grupos + row.total_eliminacion + liveDelta
-        return { row, liveDelta, partidos, effectiveTotal: row.total + liveDelta }
+        return { row, live, liveDelta, partidos, effectiveTotal: row.total + liveDelta }
       })
       .sort((a, b) => b.effectiveTotal - a.effectiveTotal)
   }, [scores, liveDeltaByParticipant])
@@ -120,7 +135,7 @@ export default function LeaderboardTable({
     async function refetchLive() {
       const { data: lm } = await supabase
         .from('matches')
-        .select('id, goles_local, goles_visitante')
+        .select('id, fase, goles_local, goles_visitante')
         .eq('estado', 'live')
       const matches = (lm ?? []) as LiveMatchLite[]
       setLiveMatches(matches)
@@ -207,19 +222,22 @@ export default function LeaderboardTable({
           </tr>
         </thead>
         <tbody>
-          {displayScores.map(({ row, liveDelta, partidos, effectiveTotal }, idx) => {
+          {displayScores.map(({ row, live, liveDelta, partidos, effectiveTotal }, idx) => {
             const flash = flashMap.get(row.participant_id)
             const participante = row.participants
             const href = `/participant/${participante?.id ?? row.participant_id}`
             const isLiveScoring = liveDelta > 0
+            const isOpen = expanded.has(row.participant_id)
             return (
+              <Fragment key={row.participant_id}>
               <tr
-                key={row.participant_id}
-                onClick={() => router.push(href)}
+                onClick={() => toggleExpanded(row.participant_id)}
+                aria-expanded={isOpen}
                 className={`
                   border-b border-[#21262d] transition-colors cursor-pointer
                   hover:bg-[#161b22]
                   ${isLiveScoring ? 'bg-[#9EE637]/5' : ''}
+                  ${isOpen ? 'bg-[#161b22]' : ''}
                   ${flash === 'up' ? 'rank-up' : ''}
                   ${flash === 'down' ? 'rank-down' : ''}
                 `}
@@ -263,18 +281,78 @@ export default function LeaderboardTable({
                   </span>
                 </td>
 
-                {/* Total (todo) */}
+                {/* Total (todo) + chevron de expandir */}
                 <td className="py-3 pl-4 text-right">
-                  <span className="font-bold tabular-nums text-base text-[#e6edf3]">
-                    {effectiveTotal}
+                  <span className="inline-flex items-center gap-2 justify-end">
+                    <span>
+                      <span className="font-bold tabular-nums text-base text-[#e6edf3]">
+                        {effectiveTotal}
+                      </span>
+                      <span className="text-[#768390] text-xs font-normal"> pts</span>
+                    </span>
+                    <svg
+                      viewBox="0 0 24 24"
+                      className={`w-4 h-4 text-[#768390] shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
                   </span>
-                  <span className="text-[#768390] text-xs font-normal"> pts</span>
                 </td>
               </tr>
+
+              {/* Panel de desglose: de dónde vienen los puntos (se mueve en vivo) */}
+              {isOpen && (
+                <tr className="border-b border-[#21262d] bg-[#0d1117]">
+                  <td colSpan={8} className="px-4 pb-4 pt-1">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      <BreakdownChip label="Grupos" value={row.total_grupos} live={live.grupos} />
+                      <BreakdownChip label="Eliminación" value={row.total_eliminacion} live={live.eliminacion} />
+                      <BreakdownChip label="Clasificados" value={row.total_clasificados} />
+                      <BreakdownChip label="Semis" value={row.total_semis} />
+                      <BreakdownChip label="Preguntas" value={row.total_preguntas} />
+                    </div>
+                    <Link
+                      href={href}
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-block mt-3 text-xs font-medium text-[#9EE637] hover:underline"
+                    >
+                      Ver perfil completo →
+                    </Link>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             )
           })}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+/** Chip de un bucket de puntos en el desglose. `live` = puntos tentativos en
+ *  vivo de ese bucket; si >0 se muestra con badge animado y se suma al valor. */
+function BreakdownChip({ label, value, live = 0 }: { label: string; value: number; live?: number }) {
+  const hasLive = live > 0
+  return (
+    <div className="bg-[#161b22] border border-[#21262d] rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+      <span className="text-xs text-[#768390]">{label}</span>
+      <span className="inline-flex items-center gap-1.5">
+        {hasLive && (
+          <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
+            +{live}
+          </span>
+        )}
+        <span className={`font-semibold tabular-nums ${hasLive ? 'text-[#9EE637]' : 'text-[#e6edf3]'}`}>
+          {value + live}
+        </span>
+      </span>
     </div>
   )
 }

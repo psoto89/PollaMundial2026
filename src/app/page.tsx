@@ -7,6 +7,7 @@ export const revalidate = 30
 
 interface LiveMatchRow {
   id: string
+  fase: string | null
   goles_local: number | null
   goles_visitante: number | null
   minuto: number | null
@@ -39,7 +40,7 @@ export default async function Home() {
     supabase
       .from('matches')
       .select(`
-        id, goles_local, goles_visitante, minuto,
+        id, fase, goles_local, goles_visitante, minuto,
         equipo_local:teams!equipo_local_id(nombre),
         equipo_visitante:teams!equipo_visitante_id(nombre)
       `)
@@ -71,6 +72,7 @@ export default async function Home() {
 
   const initialLiveMatches = liveMatchesAll.map((m) => ({
     id: m.id,
+    fase: m.fase,
     goles_local: m.goles_local,
     goles_visitante: m.goles_visitante,
   }))
