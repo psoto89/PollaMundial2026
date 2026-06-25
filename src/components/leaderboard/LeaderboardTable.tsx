@@ -291,10 +291,18 @@ export default function LeaderboardTable({
       <p className="text-xs text-[#768390] mb-2">
         Toca una fila para ver de dónde salen sus puntos
       </p>
-      <table className="w-full text-sm">
+      <table className="w-full table-fixed text-sm min-w-[460px]">
+        <colgroup>
+          <col className="w-[7%]" />
+          <col className="w-[37%]" />
+          <col className="w-[14%]" />
+          <col className="w-[13%]" />
+          <col className="w-[13%]" />
+          <col className="w-[16%]" />
+        </colgroup>
         <thead>
-          <tr className="border-b border-[#30363d] text-[#768390] text-xs uppercase tracking-wide">
-            <th className="text-left pb-3 pr-4 w-8">#</th>
+          <tr className="border-b border-[#30363d] text-[#768390] text-xs uppercase tracking-wide align-bottom">
+            <th className="text-left pb-3 pr-2">#</th>
             <th className="text-left pb-3 pr-4">Participante</th>
             <th className="text-right pb-3 px-2 text-[#9EE637]">
               Partidos
@@ -333,22 +341,22 @@ export default function LeaderboardTable({
                   ${flash === 'down' ? 'rank-down' : ''}
                 `}
               >
-                <td className="py-3 pr-4 text-[#768390] font-mono text-xs">
+                <td className="py-3 pr-2 align-middle text-[#768390] font-mono text-xs">
                   {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
                 </td>
 
-                <td className="py-3 pr-4">
+                <td className="py-3 pr-4 align-middle">
                   <Link
                     href={href}
                     onClick={(e) => e.stopPropagation()}
-                    className="font-medium text-[#e6edf3] hover:text-[#9EE637] transition-colors"
+                    className="font-medium text-[#e6edf3] hover:text-[#9EE637] transition-colors leading-tight block"
                   >
                     {participante?.nombre ?? row.participant_id}
                   </Link>
                 </td>
 
                 {/* Partidos (solo grupos + eliminación, con tentativo en vivo) */}
-                <td className="py-3 px-2 text-right">
+                <td className="py-3 px-2 text-right align-middle">
                   <span className="inline-flex items-center gap-1.5 justify-end">
                     {isLiveScoring && (
                       <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
@@ -360,7 +368,7 @@ export default function LeaderboardTable({
                 </td>
 
                 {/* Clasificación (con tentativo en vivo) */}
-                <td className="py-3 px-2 text-right">
+                <td className="py-3 px-2 text-right align-middle">
                   <span className="inline-flex items-center gap-1.5 justify-end">
                     {clasifLive > 0 && (
                       <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
@@ -374,12 +382,12 @@ export default function LeaderboardTable({
                 </td>
 
                 {/* Preguntas */}
-                <td className="py-3 px-2 text-right text-[#768390] tabular-nums">
+                <td className="py-3 px-2 text-right align-middle text-[#768390] tabular-nums">
                   {row.total_preguntas}
                 </td>
 
                 {/* Total (todo) + chevron de expandir */}
-                <td className="py-3 pl-4 text-right">
+                <td className="py-3 pl-4 text-right align-middle">
                   <span className="inline-flex items-center gap-2 justify-end">
                     <span>
                       <span className="font-bold tabular-nums text-base text-[#e6edf3]">
