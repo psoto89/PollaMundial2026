@@ -32,6 +32,9 @@ export default async function Home() {
     { data: scores },
     { data: liveMatchesRaw },
     { data: recentMatchesRaw },
+    { data: groupMatchesRaw },
+    { data: teamsRaw },
+    { data: qualifyPredsRaw },
   ] = await Promise.all([
     supabase
       .from('scores_cache')
@@ -55,10 +58,18 @@ export default async function Home() {
       .in('estado', ['finished', 'live'])
       .order('kickoff_at', { ascending: false })
       .limit(20),
+    // Para clasificados tentativos: tabla provisional de grupos en vivo
+    supabase
+      .from('matches')
+      .select('id, grupo, equipo_local_id, equipo_visitante_id, goles_local, goles_visitante, estado')
+      .eq('fase', 'grupos'),
+    supabase.from('teams').select('id, nombre, grupo'),
+    supabase
+      .from('predictions_qualify')
+      .select('participant_id, grupo, posicion, teams(nombre)'),
   ])
 
   const liveMatchesAll = (liveMatchesRaw ?? []) as unknown as LiveMatchRow[]
-  const liveMatch = liveMatchesAll[0] ?? null
   const recentMatches = (recentMatchesRaw ?? []) as unknown as MatchRow[]
 
   // Pronósticos de los partidos en vivo → puntos tentativos en la tabla general
@@ -80,9 +91,40 @@ export default async function Home() {
     participant_id: string; match_id: string; pred_local: number; pred_visitante: number
   }[]
 
+  // Datos para clasificados tentativos (tabla provisional de grupos en vivo)
+  const groupMatches = ((groupMatchesRaw ?? []) as unknown as {
+    id: string; grupo: string | null; equipo_local_id: string; equipo_visitante_id: string
+    goles_local: number | null; goles_visitante: number | null; estado: string
+  }[])
+    .filter((m) => m.grupo)
+    .map((m) => ({
+      id: m.id,
+      grupo: m.grupo as string,
+      equipoLocalId: m.equipo_local_id,
+      equipoVisitanteId: m.equipo_visitante_id,
+      golesLocal: m.goles_local,
+      golesVisitante: m.goles_visitante,
+      estado: m.estado,
+    }))
+
+  const teams = ((teamsRaw ?? []) as { id: string; nombre: string; grupo: string }[]).map((t) => ({
+    teamId: t.id,
+    teamNombre: t.nombre,
+    grupo: t.grupo,
+  }))
+
+  const qualifyPreds = ((qualifyPredsRaw ?? []) as unknown as {
+    participant_id: string; grupo: string; posicion: number; teams: { nombre: string } | null
+  }[]).map((p) => ({
+    participant_id: p.participant_id,
+    grupo: p.grupo,
+    posicion: p.posicion,
+    teamNombre: p.teams?.nombre ?? '',
+  }))
+
   return (
     <div className="space-y-6">
-      {liveMatch && <LiveBanner match={liveMatch} />}
+      {liveMatchesAll.length > 0 && <LiveBanner matches={liveMatchesAll} />}
 
       <div>
         <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight">
@@ -97,6 +139,9 @@ export default async function Home() {
         initialScores={scores as Parameters<typeof LeaderboardTable>[0]['initialScores'] ?? []}
         initialLiveMatches={initialLiveMatches}
         initialLivePreds={initialLivePreds}
+        groupMatches={groupMatches}
+        teams={teams}
+        qualifyPreds={qualifyPreds}
       />
 
       {recentMatches.length > 0 && (

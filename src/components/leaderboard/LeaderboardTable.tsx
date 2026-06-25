@@ -3,7 +3,8 @@
 import { Fragment, useEffect, useState, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { scoreGroupMatch } from '@/lib/scoring'
+import { scoreGroupMatch, scoreQualify, type QualifyPred, type QualifyOfficial } from '@/lib/scoring'
+import { computeGroupStandings } from '@/lib/standings'
 
 interface ScoreRow {
   participant_id: string
@@ -35,16 +36,45 @@ interface LivePred {
   pred_visitante: number
 }
 
+interface GroupMatchLite {
+  id: string
+  grupo: string
+  equipoLocalId: string
+  equipoVisitanteId: string
+  golesLocal: number | null
+  golesVisitante: number | null
+  estado: string
+}
+
+interface TeamLite {
+  teamId: string
+  teamNombre: string
+  grupo: string
+}
+
+interface QualifyPredLite {
+  participant_id: string
+  grupo: string
+  posicion: number
+  teamNombre: string
+}
+
 interface Props {
   initialScores: ScoreRow[]
   initialLiveMatches?: LiveMatchLite[]
   initialLivePreds?: LivePred[]
+  groupMatches?: GroupMatchLite[]
+  teams?: TeamLite[]
+  qualifyPreds?: QualifyPredLite[]
 }
 
 export default function LeaderboardTable({
   initialScores,
   initialLiveMatches = [],
   initialLivePreds = [],
+  groupMatches = [],
+  teams = [],
+  qualifyPreds = [],
 }: Props) {
   const [scores, setScores] = useState<ScoreRow[]>(initialScores)
   const [liveMatches, setLiveMatches] = useState<LiveMatchLite[]>(initialLiveMatches)
@@ -84,6 +114,64 @@ export default function LeaderboardTable({
     return delta
   }, [liveMatches, livePreds])
 
+  // ── Clasificados tentativos en vivo (1º/2º) ─────────────────────────────────
+  // Para los grupos que tienen un partido EN VIVO, calcula la tabla provisional
+  // con el marcador actual y adjudica tentativo de 1º/2º contra los pronósticos.
+  // Los mejores terceros (pos 3) no son tentativos: solo se saben al cerrar los 12
+  // grupos. Estos grupos aún no son oficiales → no hay doble conteo con total_clasificados.
+  const qualifyLiveDeltaByParticipant = useMemo(() => {
+    const delta = new Map<string, number>()
+    const liveGroupMatches = liveMatches.filter((m) => m.fase === 'grupos')
+    if (liveGroupMatches.length === 0 || groupMatches.length === 0) return delta
+    const liveById = new Map(liveGroupMatches.map((m) => [m.id, m]))
+
+    // Grupos con al menos un partido en vivo ahora mismo
+    const liveGroups = new Set<string>()
+    for (const gm of groupMatches) if (liveById.has(gm.id)) liveGroups.add(gm.grupo)
+    if (liveGroups.size === 0) return delta
+
+    // Tabla provisional → 1º/2º por grupo en vivo
+    const classified: QualifyOfficial['classified'] = {}
+    for (const grupo of liveGroups) {
+      const groupTeams = teams.filter((t) => t.grupo === grupo)
+      if (groupTeams.length === 0) continue
+      const standingMatches = []
+      for (const gm of groupMatches) {
+        if (gm.grupo !== grupo) continue
+        const live = liveById.get(gm.id)
+        const gl = live ? live.goles_local : gm.golesLocal
+        const gv = live ? live.goles_visitante : gm.golesVisitante
+        if (gl === null || gv === null) continue // partido sin jugar aún
+        standingMatches.push({
+          equipoLocalId: gm.equipoLocalId,
+          equipoVisitanteId: gm.equipoVisitanteId,
+          golesLocal: gl,
+          golesVisitante: gv,
+        })
+      }
+      if (standingMatches.length === 0) continue
+      const { rows } = computeGroupStandings(standingMatches, groupTeams)
+      const primero = rows.find((r) => r.posicion === 1)
+      const segundo = rows.find((r) => r.posicion === 2)
+      if (primero) classified[primero.teamNombre] = { grupo, posicion: 1 }
+      if (segundo) classified[segundo.teamNombre] = { grupo, posicion: 2 }
+    }
+
+    const official: QualifyOfficial = { classified, bestThirds: [] }
+    const predsByPart = new Map<string, QualifyPred[]>()
+    for (const p of qualifyPreds) {
+      if (!liveGroups.has(p.grupo) || (p.posicion !== 1 && p.posicion !== 2)) continue
+      const arr = predsByPart.get(p.participant_id) ?? []
+      arr.push({ grupo: p.grupo, posicion: p.posicion as 1 | 2, teamNombre: p.teamNombre })
+      predsByPart.set(p.participant_id, arr)
+    }
+    for (const [pid, preds] of predsByPart) {
+      const pts = scoreQualify(preds, official).total
+      if (pts > 0) delta.set(pid, pts)
+    }
+    return delta
+  }, [liveMatches, groupMatches, teams, qualifyPreds])
+
   const hasLive = liveMatches.length > 0
 
   // ── Tabla efectiva (total + tentativo), ordenada ────────────────────────────
@@ -92,12 +180,14 @@ export default function LeaderboardTable({
       .map((row) => {
         const live = liveDeltaByParticipant.get(row.participant_id) ?? { grupos: 0, eliminacion: 0 }
         const liveDelta = live.grupos + live.eliminacion
+        const clasifLive = qualifyLiveDeltaByParticipant.get(row.participant_id) ?? 0
         // Puntos SOLO de partidos (grupos + eliminación). El tentativo en vivo es de partidos.
         const partidos = row.total_grupos + row.total_eliminacion + liveDelta
-        return { row, live, liveDelta, partidos, effectiveTotal: row.total + liveDelta }
+        // El Total tentativo incluye también los clasificados tentativos (no van a Partidos).
+        return { row, live, liveDelta, clasifLive, partidos, effectiveTotal: row.total + liveDelta + clasifLive }
       })
       .sort((a, b) => b.effectiveTotal - a.effectiveTotal)
-  }, [scores, liveDeltaByParticipant])
+  }, [scores, liveDeltaByParticipant, qualifyLiveDeltaByParticipant])
 
   // ── Animación de cambios de posición (incluye reordenamiento por puntos en vivo)
   useEffect(() => {
@@ -222,7 +312,7 @@ export default function LeaderboardTable({
           </tr>
         </thead>
         <tbody>
-          {displayScores.map(({ row, live, liveDelta, partidos, effectiveTotal }, idx) => {
+          {displayScores.map(({ row, live, liveDelta, clasifLive, partidos, effectiveTotal }, idx) => {
             const flash = flashMap.get(row.participant_id)
             const participante = row.participants
             const href = `/participant/${participante?.id ?? row.participant_id}`
@@ -259,8 +349,8 @@ export default function LeaderboardTable({
                 <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390] tabular-nums">
                   {row.total_grupos}
                 </td>
-                <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390] tabular-nums">
-                  {row.total_clasificados}
+                <td className={`py-3 px-2 text-right hidden sm:table-cell tabular-nums ${clasifLive > 0 ? 'text-[#9EE637] font-semibold' : 'text-[#768390]'}`}>
+                  {row.total_clasificados + clasifLive}
                 </td>
                 <td className="py-3 px-2 text-right hidden sm:table-cell text-[#768390] tabular-nums">
                   {row.total_semis}
@@ -313,7 +403,7 @@ export default function LeaderboardTable({
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       <BreakdownChip label="Grupos" value={row.total_grupos} live={live.grupos} />
                       <BreakdownChip label="Eliminación" value={row.total_eliminacion} live={live.eliminacion} />
-                      <BreakdownChip label="Clasificados" value={row.total_clasificados} />
+                      <BreakdownChip label="Clasificados" value={row.total_clasificados} live={clasifLive} />
                       <BreakdownChip label="Semis" value={row.total_semis} />
                       <BreakdownChip label="Preguntas" value={row.total_preguntas} />
                     </div>
