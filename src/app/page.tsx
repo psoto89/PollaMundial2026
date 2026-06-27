@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import LeaderboardTable from '@/components/leaderboard/LeaderboardTable'
 import LiveBanner from '@/components/live/LiveBanner'
+import ScoringLegend from '@/components/scoring/ScoringLegend'
+import GroupStandingsBoard from '@/components/standings/GroupStandingsBoard'
 import Link from 'next/link'
 
 export const revalidate = 30
@@ -143,6 +145,10 @@ export default async function Home() {
         teams={teams}
         qualifyPreds={qualifyPreds}
       />
+
+      <ScoringLegend />
+
+      <GroupStandingsBoard groupMatches={groupMatches} teams={teams} />
 
       {recentMatches.length > 0 && (
         <div>

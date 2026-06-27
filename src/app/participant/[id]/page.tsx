@@ -16,6 +16,7 @@ interface GroupPredRow {
   pred_visitante: number
   matches: {
     id: string
+    fase: string | null
     grupo: string | null
     goles_local: number | null
     goles_visitante: number | null
@@ -188,7 +189,7 @@ export default async function ParticipantPage({ params }: Props) {
       .select(`
         pred_local, pred_visitante,
         matches(
-          id, grupo, goles_local, goles_visitante, estado,
+          id, fase, grupo, goles_local, goles_visitante, estado,
           equipo_local:teams!equipo_local_id(nombre),
           equipo_visitante:teams!equipo_visitante_id(nombre)
         )
@@ -279,6 +280,26 @@ export default async function ParticipantPage({ params }: Props) {
   const totalQualifyTentative = qualifyScorePerPick.reduce((s, p) => s + p.tentativePts, 0)
   const totalSemisPts = semisScorePerPick.reduce((s, p) => s + p.pts, 0)
 
+  // Delta tentativo en vivo de partidos (mismo cálculo que la tabla general):
+  // por cada partido EN VIVO con marcador, los puntos provisionales del pronóstico.
+  // Se separa por fase para sumarlo al bucket correcto (Grupos vs Eliminación).
+  let liveGruposDelta = 0
+  let liveElimDelta = 0
+  for (const pred of groupPreds) {
+    const m = pred.matches
+    if (!m || m.estado !== 'live' || m.goles_local === null || m.goles_visitante === null) continue
+    const pts = scoreGroupMatch(
+      { predLocal: pred.pred_local, predVisitante: pred.pred_visitante },
+      { golesLocal: m.goles_local, golesVisitante: m.goles_visitante },
+    ).total
+    if (pts <= 0) continue
+    if (m.fase === 'grupos') liveGruposDelta += pts
+    else liveElimDelta += pts
+  }
+
+  // Total tentativo en vivo: partidos (grupos + eliminación) + clasificados provisionales.
+  const liveTentativeTotal = liveGruposDelta + liveElimDelta + totalQualifyTentative
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -293,12 +314,12 @@ export default async function ParticipantPage({ params }: Props) {
       {scores && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {[
-            { label: 'Total', value: scores.total as number, highlight: true },
-            { label: 'Grupos', value: scores.total_grupos as number },
-            { label: 'Clasificados', value: scores.total_clasificados as number },
-            { label: 'Semis', value: scores.total_semis as number },
-            { label: 'Preguntas', value: scores.total_preguntas as number },
-          ].map(({ label, value, highlight }) => (
+            { label: 'Total', value: ((scores.total as number) ?? 0) + liveTentativeTotal, live: liveTentativeTotal, highlight: true },
+            { label: 'Grupos', value: ((scores.total_grupos as number) ?? 0) + liveGruposDelta, live: liveGruposDelta },
+            { label: 'Clasificados', value: ((scores.total_clasificados as number) ?? 0) + totalQualifyTentative, live: totalQualifyTentative },
+            { label: 'Semis', value: (scores.total_semis as number) ?? 0, live: 0 },
+            { label: 'Preguntas', value: (scores.total_preguntas as number) ?? 0, live: 0 },
+          ].map(({ label, value, live, highlight }) => (
             <div
               key={label}
               className={`bg-[#161b22] border rounded-lg p-3 text-center ${
@@ -306,9 +327,12 @@ export default async function ParticipantPage({ params }: Props) {
               }`}
             >
               <div className={`text-2xl font-bold tabular-nums ${highlight ? 'text-[#9EE637]' : 'text-[#e6edf3]'}`}>
-                {value ?? 0}
+                {value}
               </div>
               <div className="text-xs text-[#768390] mt-0.5">{label}</div>
+              {live > 0 && (
+                <div className="text-[10px] font-semibold text-[#9EE637] mt-1 animate-pulse">+{live} en vivo</div>
+              )}
             </div>
           ))}
         </div>
@@ -426,11 +450,13 @@ export default async function ParticipantPage({ params }: Props) {
                 <div key={grupo} className={`bg-[#161b22] border rounded-lg p-3 ${isLiveGroup ? 'border-[#9EE637]/30' : 'border-[#30363d]'}`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-semibold text-[#768390]">Grupo {grupo}</span>
-                    {grupoPts > 0 ? (
-                      <span className="text-xs font-bold text-[#9EE637]">+{grupoPts}</span>
-                    ) : grupoTent > 0 ? (
-                      <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">+{grupoTent} en vivo</span>
-                    ) : null}
+                    {grupoPts + grupoTent > 0 && (
+                      grupoTent > 0 ? (
+                        <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">+{grupoPts + grupoTent} en vivo</span>
+                      ) : (
+                        <span className="text-xs font-bold text-[#9EE637]">+{grupoPts}</span>
+                      )
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     {picks.map((pick) => {
