@@ -555,7 +555,7 @@ export default async function ParticipantPage({ params }: Props) {
                     }
 
                     return (
-                      <Link key={m.id ?? idx} href={`/match/${m.id}`}>
+                      <Link key={m.id ?? idx} href={`/match/${m.id}?p=${id}`}>
                         <div className={`flex items-center gap-2 py-2 px-3 rounded-lg hover:brightness-110 transition-all text-sm ${rowBg}`}>
                           <span className="flex-1 text-[#e6edf3] truncate min-w-0">
                             {m.equipo_local?.nombre}{' '}

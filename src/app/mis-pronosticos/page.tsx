@@ -48,7 +48,9 @@ export default async function MisPronosticosPage() {
   const { data: allScores } = await supabase
     .from('scores_cache')
     .select('participant_id, total, total_grupos, total_eliminacion, total_clasificados, total_semis, total_preguntas')
+    // Desempate: más puntos en partidos de fase de grupos
     .order('total', { ascending: false })
+    .order('total_grupos', { ascending: false })
 
   type ScoreRow = {
     participant_id: string; total: number; total_grupos: number; total_eliminacion: number

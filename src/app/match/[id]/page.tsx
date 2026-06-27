@@ -7,6 +7,7 @@ export const revalidate = 60
 
 interface Props {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ p?: string }>
 }
 
 interface MatchRow {
@@ -36,8 +37,9 @@ const estadoLabel: Record<string, string> = {
   finished: 'Finalizado',
 }
 
-export default async function MatchPage({ params }: Props) {
+export default async function MatchPage({ params, searchParams }: Props) {
   const { id } = await params
+  const { p: highlightId } = await searchParams
   const supabase = await createClient()
 
   const { data: matchRaw } = await supabase
@@ -72,7 +74,7 @@ export default async function MatchPage({ params }: Props) {
   const finished = match.estado === 'finished' && match.goles_local !== null
   const isLive = match.estado === 'live'
 
-  const predsWithScores = preds.map((p) => {
+  const scored = preds.map((p) => {
     const score = (finished || isLive)
       ? scoreGroupMatch(
           { predLocal: p.pred_local, predVisitante: p.pred_visitante },
@@ -84,6 +86,14 @@ export default async function MatchPage({ params }: Props) {
       : null
     return { ...p, score }
   }).sort((a, b) => (b.score?.total ?? 0) - (a.score?.total ?? 0))
+
+  // Si venimos del perfil de un participante (?p=...), fijamos su pronóstico
+  // arriba y resaltamos su fila; el resto queda ordenado por puntos.
+  const highlighted = highlightId ? scored.find((p) => p.participant_id === highlightId) : undefined
+  const highlightedNombre = highlighted?.participants?.nombre ?? null
+  const predsWithScores = highlighted
+    ? [highlighted, ...scored.filter((p) => p.participant_id !== highlightId)]
+    : scored
 
   const totalAcertaron = predsWithScores.filter((p) => (p.score?.total ?? 0) >= 2).length
   const totalExactos = predsWithScores.filter((p) => (p.score?.exacto ?? 0) > 0).length
@@ -157,13 +167,21 @@ export default async function MatchPage({ params }: Props) {
         </div>
       ) : (
       <div>
-        <h2 className="text-lg font-semibold text-[#e6edf3] mb-3">
-          Pronósticos ({predsWithScores.length})
-        </h2>
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold text-[#e6edf3]">
+            Pronósticos ({predsWithScores.length})
+          </h2>
+          {highlightedNombre && (
+            <p className="text-xs text-[#9EE637] mt-0.5">Mostrando el pronóstico de {highlightedNombre} arriba</p>
+          )}
+        </div>
         <div className="divide-y divide-[#21262d] bg-[#161b22] border border-[#30363d] rounded-xl overflow-hidden">
           {predsWithScores.map((p) => {
             const pts = p.score?.total ?? null
-            const bgClass = pts === 5 ? 'bg-[#58a6ff]/5' : pts === 2 ? 'bg-[#9EE637]/5' : ''
+            const isHighlighted = highlightId != null && p.participant_id === highlightId
+            const bgClass = isHighlighted
+              ? 'bg-[#9EE637]/10 ring-1 ring-inset ring-[#9EE637]/40'
+              : pts === 5 ? 'bg-[#58a6ff]/5' : pts === 2 ? 'bg-[#9EE637]/5' : ''
             return (
               <div key={p.participant_id} className={`flex items-center gap-3 px-4 py-3 ${bgClass}`}>
                 {/* Nombre — clickable */}

@@ -186,7 +186,14 @@ export default function LeaderboardTable({
         // El Total tentativo incluye también los clasificados tentativos (no van a Partidos).
         return { row, live, liveDelta, clasifLive, partidos, effectiveTotal: row.total + liveDelta + clasifLive }
       })
-      .sort((a, b) => b.effectiveTotal - a.effectiveTotal)
+      .sort((a, b) => {
+        // Orden principal: total efectivo (incluye tentativo en vivo)
+        if (b.effectiveTotal !== a.effectiveTotal) return b.effectiveTotal - a.effectiveTotal
+        // Desempate: quien hizo más puntos en los partidos de fase de grupos
+        const ag = a.row.total_grupos + a.live.grupos
+        const bg = b.row.total_grupos + b.live.grupos
+        return bg - ag
+      })
   }, [scores, liveDeltaByParticipant, qualifyLiveDeltaByParticipant])
 
   // ── Animación de cambios de posición (incluye reordenamiento por puntos en vivo)

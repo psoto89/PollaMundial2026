@@ -41,7 +41,9 @@ export default async function Home() {
     supabase
       .from('scores_cache')
       .select('*, participants(id, nombre, sheet_alias, avatar_url)')
-      .order('total', { ascending: false }),
+      // Desempate: más puntos en partidos de fase de grupos
+      .order('total', { ascending: false })
+      .order('total_grupos', { ascending: false }),
     supabase
       .from('matches')
       .select(`
