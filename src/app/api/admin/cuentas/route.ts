@@ -11,6 +11,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 const schema = z.object({
   participantId: z.string().uuid(),
   email: z.string().email().max(255),
+  // Opcional: vincular una cuenta self-signup ya existente (Supabase Auth)
+  authUserId: z.string().uuid().optional(),
 })
 
 export async function POST(req: NextRequest) {
@@ -25,12 +27,17 @@ export async function POST(req: NextRequest) {
     const email = parsed.data.email.trim().toLowerCase()
     const db = createAdminClient()
 
-    // Si el participante ya entró antes con este email, re-vincular auth_user_id
-    const { data: existingUser } = await db
-      .from('participant_accounts')
-      .select('auth_user_id')
-      .eq('participant_id', parsed.data.participantId)
-      .maybeSingle()
+    // Vinculación manual de un self-signup: usa el authUserId entrante.
+    // Pre-asignación clásica: conserva el auth_user_id que ya tuviera el participante.
+    let authUserId = parsed.data.authUserId ?? null
+    if (!authUserId) {
+      const { data: existingUser } = await db
+        .from('participant_accounts')
+        .select('auth_user_id')
+        .eq('participant_id', parsed.data.participantId)
+        .maybeSingle()
+      authUserId = existingUser?.auth_user_id ?? null
+    }
 
     const { error } = await db
       .from('participant_accounts')
@@ -38,8 +45,7 @@ export async function POST(req: NextRequest) {
         {
           participant_id: parsed.data.participantId,
           email,
-          // Conservar auth_user_id si ya existía
-          auth_user_id: existingUser?.auth_user_id ?? null,
+          auth_user_id: authUserId,
         },
         { onConflict: 'participant_id' },
       )

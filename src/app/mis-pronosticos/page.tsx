@@ -24,9 +24,10 @@ export default async function MisPronosticosPage() {
     return (
       <div className="max-w-md mx-auto py-12 text-center">
         <p className="text-3xl mb-3">🔗</p>
-        <h1 className="text-xl font-bold text-[#e6edf3]">Cuenta no vinculada</h1>
+        <h1 className="text-xl font-bold text-[#e6edf3]">Cuenta creada — falta vincular</h1>
         <p className="text-sm text-[#768390] mt-2">
-          Tu correo aún no está asociado a un participante. Contacta al admin para que te registre.
+          Tu cuenta ya existe, pero aún no está asociada a tu participante de la polla.
+          El admin la vinculará pronto y podrás cargar tus pronósticos.
         </p>
       </div>
     )
@@ -96,6 +97,12 @@ export default async function MisPronosticosPage() {
       .map((p) => [p.match_id, p]),
   )
 
+  // Conteo de pronósticos por partido (función SECURITY DEFINER: solo cuenta, no expone marcadores)
+  const { data: countsRaw } = await supabase.rpc('prediction_counts')
+  const countByMatch = new Map(
+    ((countsRaw ?? []) as { match_id: string; n: number }[]).map((c) => [c.match_id, c.n]),
+  )
+
   const toKnockoutMatch = (m: MatchRow): KnockoutMatch => {
     const pred = predByMatch.get(m.id)
     return {
@@ -109,6 +116,8 @@ export default async function MisPronosticosPage() {
       golesVisitante: m.goles_visitante,
       predLocal: pred?.pred_local ?? null,
       predVisitante: pred?.pred_visitante ?? null,
+      predCount: countByMatch.get(m.id) ?? 0,
+      totalParticipants: totalParticipantes,
     }
   }
 

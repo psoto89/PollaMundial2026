@@ -82,10 +82,17 @@ export interface QualifyOfficial {
 /**
  * Calcula puntos de la sección "clasificados a dieciseisavos".
  *
- * Reglas:
- *   - Por cada equipo acertado como clasificado (1º, 2º de grupo, o mejor tercero): +4 pts
- *   - Si además la posición pronosticada coincide exactamente (solo aplica a 1/2): +4 pts
- *   - Para pos 3: si el equipo efectivamente es mejor tercero → +4 (clasificado); sin bonus de posición exacta
+ * Regla simétrica para las tres posiciones (1º, 2º y mejor tercero):
+ *   - Por cada equipo que efectivamente clasificó (en CUALQUIER posición: 1, 2 o
+ *     mejor tercero) y que el participante pronosticó como clasificado: +4 pts
+ *   - Si además la posición pronosticada coincide exactamente con la real
+ *     (1=1, 2=2, 3=3): +4 pts adicionales (total 8)
+ *
+ * Ejemplos:
+ *   - Pronostica 3º y queda 3º (mejor tercero) → 8
+ *   - Pronostica 3º y queda 2º → 4 (clasificó, pero otra posición)
+ *   - Pronostica 2º y queda mejor tercero → 4
+ *   - No clasificó → 0
  */
 export function scoreQualify(
   preds: QualifyPred[],
@@ -94,35 +101,21 @@ export function scoreQualify(
   let clasificado = 0
   let posicion = 0
 
-  // Mapas normalizados (sin acentos/mayúsculas/espacios) para tolerar diferencias
-  // entre los nombres del pronóstico y los oficiales (ej: "MEXICO" vs "México").
-  const classifiedNorm = new Map<string, { grupo: string; posicion: 1 | 2 }>()
+  // Mapa unificado normalizado: equipo → posición REAL en la que clasificó (1, 2 o 3).
+  // Normalizado (sin acentos/mayúsculas/espacios) para tolerar diferencias de nombre.
+  const actualPos = new Map<string, 1 | 2 | 3>()
   for (const [team, entry] of Object.entries(official.classified)) {
-    classifiedNorm.set(normalizeText(team), entry)
+    actualPos.set(normalizeText(team), entry.posicion)
   }
-  const bestThirdsNorm = new Set(official.bestThirds.map(normalizeText))
+  for (const team of official.bestThirds) {
+    actualPos.set(normalizeText(team), 3)
+  }
 
   for (const pred of preds) {
-    const normTeam = normalizeText(pred.teamNombre)
-
-    if (pred.posicion === 3) {
-      // Mejor tercero: +4 si está en la lista oficial de mejores terceros
-      if (bestThirdsNorm.has(normTeam)) {
-        clasificado += 4
-        // Sin bonus de posición exacta para terceros
-      }
-    } else {
-      // Posición 1 o 2
-      const officialEntry = classifiedNorm.get(normTeam)
-      if (officialEntry) {
-        // El equipo clasificó (en cualquier posición del grupo)
-        clasificado += 4
-        // Bonus si además la posición en el grupo coincide exactamente
-        if (officialEntry.posicion === pred.posicion) {
-          posicion += 4
-        }
-      }
-    }
+    const real = actualPos.get(normalizeText(pred.teamNombre))
+    if (real === undefined) continue // el equipo no clasificó
+    clasificado += 4
+    if (real === pred.posicion) posicion += 4 // posición exacta (incluido 3º)
   }
 
   return { clasificado, posicion, total: clasificado + posicion }

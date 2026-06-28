@@ -73,9 +73,9 @@ npm run test:watch
 - Además marcador exacto: **+3 pts adicionales** (total 5)
 
 ### Clasificados a dieciseisavos
-- Equipo clasificado acertado: **+4 pts**
-- Además posición exacta en el grupo (1º o 2º): **+4 pts adicionales**
-- Para pos 3 (mejor tercero): **+4 si está entre los 8**, sin bonus de posición
+- Equipo clasificado acertado (1º, 2º **o** mejor tercero): **+4 pts**
+- Además posición exacta (1º=1º, 2º=2º, **3º=3º**): **+4 pts adicionales** (total 8)
+- Si clasificó pero en otra posición (p. ej. lo pusiste 3º y quedó 2º, o lo pusiste 2º y quedó mejor tercero): **solo +4**
 
 ### Semifinales / puestos finales
 - Equipo entre los 4 semifinalistas: **+10 pts**

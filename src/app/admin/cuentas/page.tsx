@@ -1,22 +1,24 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import CuentasForm, { type ParticipantAccount } from './CuentasForm'
+import CuentasForm, { type ParticipantAccount, type UnlinkedUser, type ParticipantOption } from './CuentasForm'
 
 export const revalidate = 0
 
 export default async function AdminCuentasPage() {
   const db = createAdminClient()
 
-  const [{ data: participants }, { data: accounts }] = await Promise.all([
+  const [{ data: participants }, { data: accounts }, authList] = await Promise.all([
     db.from('participants').select('id, nombre').order('nombre'),
     db.from('participant_accounts').select('participant_id, email, auth_user_id'),
+    db.auth.admin.listUsers({ page: 1, perPage: 1000 }),
   ])
 
-  const accByPart = new Map(
-    ((accounts ?? []) as { participant_id: string; email: string; auth_user_id: string | null }[])
-      .map((a) => [a.participant_id, a]),
-  )
+  const accList = (accounts ?? []) as { participant_id: string; email: string; auth_user_id: string | null }[]
+  const accByPart = new Map(accList.map((a) => [a.participant_id, a]))
+  const linkedAuthIds = new Set(accList.map((a) => a.auth_user_id).filter(Boolean) as string[])
 
-  const rows: ParticipantAccount[] = ((participants ?? []) as { id: string; nombre: string }[]).map((p) => {
+  const partList = (participants ?? []) as { id: string; nombre: string }[]
+
+  const rows: ParticipantAccount[] = partList.map((p) => {
     const acc = accByPart.get(p.id)
     return {
       participantId: p.id,
@@ -26,15 +28,31 @@ export default async function AdminCuentasPage() {
     }
   })
 
+  // Cuentas de Supabase Auth que aún no están vinculadas a ningún participante
+  const unlinkedUsers: UnlinkedUser[] = (authList.data?.users ?? [])
+    .filter((u) => !linkedAuthIds.has(u.id) && u.email)
+    .map((u) => ({ authUserId: u.id, email: u.email as string, createdAt: u.created_at ?? '' }))
+
+  // Participantes que todavía no tienen cuenta vinculada (para el dropdown)
+  const participantOptions: ParticipantOption[] = partList
+    .filter((p) => !accByPart.get(p.id)?.auth_user_id)
+    .map((p) => ({ id: p.id, nombre: p.nombre }))
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
         <h1 className="text-xl font-bold text-[#e6edf3]">Cuentas de participantes</h1>
         <p className="text-sm text-[#768390] mt-1">
-          Asigna el email de cada uno. Al entrar por magic link con ese correo, su cuenta se vincula sola.
+          Cualquiera puede crear su cuenta en el login. Aquí vinculas cada cuenta nueva a su
+          participante de la Etapa 1 (o pre-asignas el email para auto-vinculación).
         </p>
       </div>
-      <CuentasForm rows={rows} />
+
+      <CuentasForm
+        rows={rows}
+        unlinkedUsers={unlinkedUsers}
+        participantOptions={participantOptions}
+      />
     </div>
   )
 }

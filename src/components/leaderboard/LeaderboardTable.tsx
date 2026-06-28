@@ -1,16 +1,23 @@
 'use client'
 
-import { Fragment, useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { scoreGroupMatch, scoreQualify, type QualifyPred, type QualifyOfficial } from '@/lib/scoring'
 import { computeGroupStandings } from '@/lib/standings'
+
+export type LeaderboardScope = 'general' | 'grupos' | 'eliminacion'
 
 interface ScoreRow {
   participant_id: string
   total: number
   total_grupos: number
   total_eliminacion: number
+  total_r32: number
+  total_r16: number
+  total_qf: number
+  total_sf: number
+  total_final: number
   total_clasificados: number
   total_semis: number
   total_preguntas: number
@@ -61,6 +68,7 @@ interface QualifyPredLite {
 
 interface Props {
   initialScores: ScoreRow[]
+  scope?: LeaderboardScope
   initialLiveMatches?: LiveMatchLite[]
   initialLivePreds?: LivePred[]
   groupMatches?: GroupMatchLite[]
@@ -68,8 +76,31 @@ interface Props {
   qualifyPreds?: QualifyPredLite[]
 }
 
+// Mapeo fase real → bucket de ronda (para tentativo en vivo y chips)
+type RoundBucket = 'r32' | 'r16' | 'qf' | 'sf' | 'final'
+const FASE_TO_ROUND: Record<string, RoundBucket> = {
+  dieciseisavos: 'r32',
+  octavos: 'r16',
+  cuartos: 'qf',
+  semis: 'sf',
+  final: 'final',
+  tercer_puesto: 'final',
+}
+
+interface LiveDelta {
+  grupos: number
+  r32: number
+  r16: number
+  qf: number
+  sf: number
+  final: number
+}
+const ZERO_DELTA: LiveDelta = { grupos: 0, r32: 0, r16: 0, qf: 0, sf: 0, final: 0 }
+const elimSum = (d: LiveDelta) => d.r32 + d.r16 + d.qf + d.sf + d.final
+
 export default function LeaderboardTable({
   initialScores,
+  scope = 'general',
   initialLiveMatches = [],
   initialLivePreds = [],
   groupMatches = [],
@@ -91,11 +122,9 @@ export default function LeaderboardTable({
       return next
     })
 
-  // ── Puntos tentativos en vivo por participante, separados por bucket ─────────
-  // grupos vs eliminación según la fase del partido en vivo, para que el desglose
-  // se mueva en el bucket correcto igual que la columna Partidos.
+  // ── Puntos tentativos en vivo por participante, por bucket (grupos + rondas) ──
   const liveDeltaByParticipant = useMemo(() => {
-    const delta = new Map<string, { grupos: number; eliminacion: number }>()
+    const delta = new Map<string, LiveDelta>()
     if (liveMatches.length === 0) return delta
     const scoreByMatch = new Map(liveMatches.map((m) => [m.id, m]))
     for (const pred of livePreds) {
@@ -106,31 +135,28 @@ export default function LeaderboardTable({
         { golesLocal: m.goles_local, golesVisitante: m.goles_visitante },
       ).total
       if (pts <= 0) continue
-      const cur = delta.get(pred.participant_id) ?? { grupos: 0, eliminacion: 0 }
+      const cur = delta.get(pred.participant_id) ?? { ...ZERO_DELTA }
       if (m.fase === 'grupos') cur.grupos += pts
-      else cur.eliminacion += pts
+      else {
+        const round = FASE_TO_ROUND[m.fase ?? ''] ?? 'final'
+        cur[round] += pts
+      }
       delta.set(pred.participant_id, cur)
     }
     return delta
   }, [liveMatches, livePreds])
 
-  // ── Clasificados tentativos en vivo (1º/2º) ─────────────────────────────────
-  // Para los grupos que tienen un partido EN VIVO, calcula la tabla provisional
-  // con el marcador actual y adjudica tentativo de 1º/2º contra los pronósticos.
-  // Los mejores terceros (pos 3) no son tentativos: solo se saben al cerrar los 12
-  // grupos. Estos grupos aún no son oficiales → no hay doble conteo con total_clasificados.
+  // ── Clasificados tentativos en vivo (1º/2º) — solo relevante para grupos ─────
   const qualifyLiveDeltaByParticipant = useMemo(() => {
     const delta = new Map<string, number>()
     const liveGroupMatches = liveMatches.filter((m) => m.fase === 'grupos')
     if (liveGroupMatches.length === 0 || groupMatches.length === 0) return delta
     const liveById = new Map(liveGroupMatches.map((m) => [m.id, m]))
 
-    // Grupos con al menos un partido en vivo ahora mismo
     const liveGroups = new Set<string>()
     for (const gm of groupMatches) if (liveById.has(gm.id)) liveGroups.add(gm.grupo)
     if (liveGroups.size === 0) return delta
 
-    // Tabla provisional → 1º/2º por grupo en vivo
     const classified: QualifyOfficial['classified'] = {}
     for (const grupo of liveGroups) {
       const groupTeams = teams.filter((t) => t.grupo === grupo)
@@ -141,7 +167,7 @@ export default function LeaderboardTable({
         const live = liveById.get(gm.id)
         const gl = live ? live.goles_local : gm.golesLocal
         const gv = live ? live.goles_visitante : gm.golesVisitante
-        if (gl === null || gv === null) continue // partido sin jugar aún
+        if (gl === null || gv === null) continue
         standingMatches.push({
           equipoLocalId: gm.equipoLocalId,
           equipoVisitanteId: gm.equipoVisitanteId,
@@ -174,29 +200,35 @@ export default function LeaderboardTable({
 
   const hasLive = liveMatches.length > 0
 
-  // ── Tabla efectiva (total + tentativo), ordenada ────────────────────────────
+  // ── Tabla efectiva, ordenada por la métrica del scope ───────────────────────
   const displayScores = useMemo(() => {
-    return scores
-      .map((row) => {
-        const live = liveDeltaByParticipant.get(row.participant_id) ?? { grupos: 0, eliminacion: 0 }
-        const liveDelta = live.grupos + live.eliminacion
-        const clasifLive = qualifyLiveDeltaByParticipant.get(row.participant_id) ?? 0
-        // Puntos SOLO de partidos (grupos + eliminación). El tentativo en vivo es de partidos.
-        const partidos = row.total_grupos + row.total_eliminacion + liveDelta
-        // El Total tentativo incluye también los clasificados tentativos (no van a Partidos).
-        return { row, live, liveDelta, clasifLive, partidos, effectiveTotal: row.total + liveDelta + clasifLive }
-      })
-      .sort((a, b) => {
-        // Orden principal: total efectivo (incluye tentativo en vivo)
-        if (b.effectiveTotal !== a.effectiveTotal) return b.effectiveTotal - a.effectiveTotal
-        // Desempate: quien hizo más puntos en los partidos de fase de grupos
-        const ag = a.row.total_grupos + a.live.grupos
-        const bg = b.row.total_grupos + b.live.grupos
-        return bg - ag
-      })
-  }, [scores, liveDeltaByParticipant, qualifyLiveDeltaByParticipant])
+    const rows = scores.map((row) => {
+      const live = liveDeltaByParticipant.get(row.participant_id) ?? ZERO_DELTA
+      const liveElim = elimSum(live)
+      const clasifLive = qualifyLiveDeltaByParticipant.get(row.participant_id) ?? 0
+      const gruposMetric = row.total_grupos + live.grupos
+      const elimMetric = row.total_eliminacion + liveElim
+      const generalMetric = row.total + live.grupos + liveElim + clasifLive
+      const metric =
+        scope === 'grupos' ? gruposMetric : scope === 'eliminacion' ? elimMetric : generalMetric
+      // Ganancia tentativa en vivo para el scope actual (badge "+N puntos")
+      const liveGain =
+        scope === 'grupos' ? live.grupos : scope === 'eliminacion' ? liveElim : live.grupos + liveElim + clasifLive
+      return { row, live, liveElim, clasifLive, metric, liveGain }
+    })
+    rows.sort((a, b) => {
+      if (b.metric !== a.metric) return b.metric - a.metric
+      // Desempate: puntos en fase de grupos
+      const ag = a.row.total_grupos + a.live.grupos
+      const bg = b.row.total_grupos + b.live.grupos
+      return bg - ag
+    })
+    return rows
+  }, [scores, liveDeltaByParticipant, qualifyLiveDeltaByParticipant, scope])
 
-  // ── Animación de cambios de posición (incluye reordenamiento por puntos en vivo)
+  const leaderMetric = displayScores.length > 0 ? displayScores[0].metric : 0
+
+  // ── Animación de cambios de posición ────────────────────────────────────────
   useEffect(() => {
     const newRanks = new Map(displayScores.map((s, i) => [s.row.participant_id, i]))
     if (prevRanks.current.size > 0) {
@@ -217,7 +249,7 @@ export default function LeaderboardTable({
     prevRanks.current = newRanks
   }, [displayScores])
 
-  // ── Realtime: scores_cache + matches (para el tentativo en vivo) ─────────────
+  // ── Realtime: scores_cache + matches ────────────────────────────────────────
   useEffect(() => {
     const supabase = createClient()
 
@@ -254,14 +286,8 @@ export default function LeaderboardTable({
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, refetchLive)
       .subscribe()
 
-    // Refresco en segundo plano (no depende de Realtime ni de recargar la página):
-    // si hay partidos en vivo, le pide al backend marcadores frescos de TheSportsDB
-    // y vuelve a leer todo. Así la tabla se actualiza sola con cada gol.
     async function backgroundRefresh() {
-      const { data: lm } = await supabase
-        .from('matches')
-        .select('id')
-        .eq('estado', 'live')
+      const { data: lm } = await supabase.from('matches').select('id').eq('estado', 'live')
       const hayVivo = (lm ?? []).length > 0
       if (hayVivo) {
         try { await fetch('/api/live/poll', { method: 'POST' }) } catch {}
@@ -287,166 +313,153 @@ export default function LeaderboardTable({
     )
   }
 
+  const scopeLabel =
+    scope === 'grupos' ? 'fase de grupos' : scope === 'eliminacion' ? 'eliminación' : 'todo el torneo'
+
   return (
-    <div className="overflow-x-auto -mx-4 px-4">
+    <div className="space-y-2.5">
       {hasLive && (
-        <p className="text-xs text-[#768390] mb-2 flex items-center gap-1.5">
+        <p className="text-xs text-[#768390] flex items-center gap-1.5">
           <span className="live-dot w-1.5 h-1.5 rounded-full bg-[#f85149]" />
           Puntos <span className="text-[#9EE637] font-semibold">en vivo</span> tentativos según el marcador actual
         </p>
       )}
-      <p className="text-xs text-[#768390] mb-2">
-        <span className="text-[#9EE637] font-medium">Partidos</span> = solo partidos · <span className="text-[#e6edf3] font-medium">Total</span> = todo · toca una fila para ver el desglose
+      <p className="text-xs text-[#768390]">
+        Posiciones por <span className="text-[#e6edf3] font-medium">{scopeLabel}</span> · toca una tarjeta para ver el desglose
       </p>
-      <table className="w-full table-fixed text-sm">
-        <thead>
-          <tr className="border-b border-[#30363d] text-[#768390] text-[10px] uppercase tracking-wide align-bottom">
-            <th className="w-7 text-left pb-3 pr-1">#</th>
-            <th className="text-left pb-3 pr-2">Participante</th>
-            <th className="w-[58px] text-right pb-3 px-1.5 text-[#9EE637]">Partidos</th>
-            <th className="w-[52px] text-right pb-3 px-1.5">Clasif.</th>
-            <th className="w-[60px] text-right pb-3 px-1.5 hidden sm:table-cell">Preguntas</th>
-            <th className="w-[68px] text-right pb-3 pl-2 font-bold text-[#e6edf3]">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {displayScores.map(({ row, live, liveDelta, clasifLive, partidos, effectiveTotal }, idx) => {
-            const flash = flashMap.get(row.participant_id)
-            const participante = row.participants
-            const href = `/participant/${participante?.id ?? row.participant_id}`
-            const isLiveScoring = liveDelta > 0
-            const isOpen = expanded.has(row.participant_id)
-            return (
-              <Fragment key={row.participant_id}>
-              <tr
-                onClick={() => toggleExpanded(row.participant_id)}
-                aria-expanded={isOpen}
-                className={`
-                  border-b border-[#21262d] transition-colors cursor-pointer
-                  hover:bg-[#161b22]
-                  ${isLiveScoring ? 'bg-[#9EE637]/5' : ''}
-                  ${isOpen ? 'bg-[#161b22]' : ''}
-                  ${flash === 'up' ? 'rank-up' : ''}
-                  ${flash === 'down' ? 'rank-down' : ''}
-                `}
-              >
-                <td className="py-3 pr-1 align-middle text-[#768390] font-mono text-xs">
-                  {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
-                </td>
 
-                <td className="py-3 pr-2 align-middle">
+      {displayScores.map(({ row, live, liveElim, clasifLive, metric, liveGain }, idx) => {
+        const flash = flashMap.get(row.participant_id)
+        const p = row.participants
+        const href = `/participant/${p?.id ?? row.participant_id}`
+        const isOpen = expanded.has(row.participant_id)
+        const isLeader = idx === 0
+        const gap = metric - leaderMetric // <= 0
+        const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null
+
+        // Tarjetas top-3 con tinte; resto neutro
+        const rankTint =
+          idx === 0
+            ? 'border-[#d9a441]/50 bg-gradient-to-br from-[#d9a441]/12 to-transparent'
+            : idx === 1
+              ? 'border-[#9aa4ad]/40 bg-gradient-to-br from-[#9aa4ad]/10 to-transparent'
+              : idx === 2
+                ? 'border-[#cd7f32]/40 bg-gradient-to-br from-[#cd7f32]/12 to-transparent'
+                : 'border-[#30363d] bg-[#161b22]'
+
+        return (
+          <div
+            key={row.participant_id}
+            className={`
+              rounded-xl border transition-colors overflow-hidden
+              ${rankTint}
+              ${flash === 'up' ? 'rank-up' : ''}
+              ${flash === 'down' ? 'rank-down' : ''}
+            `}
+          >
+            <button
+              type="button"
+              onClick={() => toggleExpanded(row.participant_id)}
+              aria-expanded={isOpen}
+              className="w-full flex items-center gap-3 p-3.5 text-left hover:bg-white/[0.02]"
+            >
+              {/* Medalla / posición */}
+              <span
+                className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold tabular-nums
+                  ${medal ? 'text-lg' : 'bg-[#0d1117] border border-[#30363d] text-[#768390]'}`}
+              >
+                {medal ?? idx + 1}
+              </span>
+
+              {/* Nombre */}
+              <div className="flex-1 min-w-0">
+                <Link
+                  href={href}
+                  onClick={(e) => e.stopPropagation()}
+                  className="font-semibold text-[#e6edf3] hover:text-[#9EE637] transition-colors block truncate"
+                >
+                  {p?.nombre ?? row.participant_id}
+                </Link>
+                {liveGain > 0 && (
+                  <span className="text-xs font-semibold text-[#9EE637]">+{liveGain} en vivo</span>
+                )}
+              </div>
+
+              {/* Total + gap al líder */}
+              <div className="shrink-0 text-right">
+                <div className="text-2xl font-black tabular-nums text-[#9EE637] leading-none">{metric}</div>
+                <div className="text-[11px] mt-1 text-[#768390]">
+                  {isLeader ? <span className="text-[#9EE637] font-semibold">Líder</span> : `${gap} pts`}
+                </div>
+              </div>
+
+              {/* Chevron */}
+              <svg
+                viewBox="0 0 24 24"
+                className={`w-4 h-4 text-[#768390] shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+
+            {/* Desglose: chips por fase */}
+            {isOpen && (
+              <div className="px-3.5 pb-3.5 pt-1 border-t border-white/5">
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                  <PhaseChip label="Grupos" value={row.total_grupos} live={live.grupos} highlight={scope === 'grupos'} />
+                  <PhaseChip label="R32" value={row.total_r32} live={live.r32} highlight={scope === 'eliminacion'} />
+                  <PhaseChip label="R16" value={row.total_r16} live={live.r16} highlight={scope === 'eliminacion'} />
+                  <PhaseChip label="QF" value={row.total_qf} live={live.qf} highlight={scope === 'eliminacion'} />
+                  <PhaseChip label="SF" value={row.total_sf} live={live.sf} highlight={scope === 'eliminacion'} />
+                  <PhaseChip label="Final" value={row.total_final} live={live.final} highlight={scope === 'eliminacion'} />
+                  <PhaseChip label="Clasif." value={row.total_clasificados} live={clasifLive} />
+                  <PhaseChip label="Preguntas" value={row.total_preguntas} />
+                </div>
+                <div className="flex items-center justify-between mt-2.5">
+                  <span className="text-[11px] text-[#768390]">
+                    Eliminación: <span className="text-[#e6edf3] font-medium tabular-nums">{row.total_eliminacion + liveElim}</span>
+                    {' · '}Total: <span className="text-[#e6edf3] font-medium tabular-nums">{row.total + live.grupos + liveElim + clasifLive}</span>
+                  </span>
                   <Link
                     href={href}
                     onClick={(e) => e.stopPropagation()}
-                    className="font-medium text-[#e6edf3] hover:text-[#9EE637] transition-colors leading-tight block truncate"
+                    className="text-xs font-medium text-[#9EE637] hover:underline"
                   >
-                    {participante?.nombre ?? row.participant_id}
+                    Ver perfil →
                   </Link>
-                </td>
-
-                {/* Partidos (solo grupos + eliminación, con tentativo en vivo) */}
-                <td className="py-3 px-1.5 text-right align-middle">
-                  <span className="inline-flex items-center gap-1.5 justify-end">
-                    {isLiveScoring && (
-                      <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
-                        +{liveDelta}
-                      </span>
-                    )}
-                    <span className="font-semibold tabular-nums text-[#9EE637]">{partidos}</span>
-                  </span>
-                </td>
-
-                {/* Clasificación (con tentativo en vivo) */}
-                <td className="py-3 px-1.5 text-right align-middle">
-                  <span className="inline-flex items-center gap-1.5 justify-end">
-                    {clasifLive > 0 && (
-                      <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
-                        +{clasifLive}
-                      </span>
-                    )}
-                    <span className={`tabular-nums ${clasifLive > 0 ? 'text-[#9EE637] font-semibold' : 'text-[#768390]'}`}>
-                      {row.total_clasificados + clasifLive}
-                    </span>
-                  </span>
-                </td>
-
-                {/* Preguntas (oculta en móvil; visible en el desglose al tocar) */}
-                <td className="py-3 px-1.5 text-right align-middle text-[#768390] tabular-nums hidden sm:table-cell">
-                  {row.total_preguntas}
-                </td>
-
-                {/* Total (todo) + chevron de expandir */}
-                <td className="py-3 pl-2 text-right align-middle">
-                  <span className="inline-flex items-center gap-2 justify-end">
-                    <span>
-                      <span className="font-bold tabular-nums text-base text-[#e6edf3]">
-                        {effectiveTotal}
-                      </span>
-                      <span className="text-[#768390] text-xs font-normal hidden sm:inline"> pts</span>
-                    </span>
-                    <svg
-                      viewBox="0 0 24 24"
-                      className={`w-4 h-4 text-[#768390] shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M6 9l6 6 6-6" />
-                    </svg>
-                  </span>
-                </td>
-              </tr>
-
-              {/* Panel de desglose: de dónde vienen los puntos (se mueve en vivo) */}
-              {isOpen && (
-                <tr className="border-b border-[#21262d] bg-[#0d1117]">
-                  <td colSpan={6} className="px-4 pb-4 pt-1">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      <BreakdownChip label="Grupos" value={row.total_grupos} live={live.grupos} />
-                      <BreakdownChip label="Eliminación" value={row.total_eliminacion} live={live.eliminacion} />
-                      <BreakdownChip label="Clasificados" value={row.total_clasificados} live={clasifLive} />
-                      <BreakdownChip label="Semis" value={row.total_semis} />
-                      <BreakdownChip label="Preguntas" value={row.total_preguntas} />
-                    </div>
-                    <Link
-                      href={href}
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-block mt-3 text-xs font-medium text-[#9EE637] hover:underline"
-                    >
-                      Ver perfil completo →
-                    </Link>
-                  </td>
-                </tr>
-              )}
-              </Fragment>
-            )
-          })}
-        </tbody>
-      </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-/** Chip de un bucket de puntos en el desglose. `live` = puntos tentativos en
- *  vivo de ese bucket; si >0 se muestra con badge animado y se suma al valor. */
-function BreakdownChip({ label, value, live = 0 }: { label: string; value: number; live?: number }) {
+/** Chip de un bucket de puntos. `highlight` marca la fase del scope actual. */
+function PhaseChip({
+  label, value, live = 0, highlight = false,
+}: { label: string; value: number; live?: number; highlight?: boolean }) {
   const hasLive = live > 0
+  const empty = value === 0 && !hasLive
   return (
-    <div className="bg-[#161b22] border border-[#21262d] rounded-lg px-3 py-2 flex items-center justify-between gap-2">
-      <span className="text-xs text-[#768390]">{label}</span>
-      <span className="inline-flex items-center gap-1.5">
+    <div
+      className={`rounded-lg px-2.5 py-1.5 border
+        ${highlight ? 'border-[#9EE637]/40 bg-[#9EE637]/5' : 'border-[#21262d] bg-[#0d1117]'}`}
+    >
+      <div className="text-[10px] text-[#768390] uppercase tracking-wide truncate">{label}</div>
+      <div className="flex items-center gap-1 mt-0.5">
         {hasLive && (
-          <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
+          <span className="text-[9px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1 py-0.5 rounded animate-pulse">
             +{live}
           </span>
         )}
-        <span className={`font-semibold tabular-nums ${hasLive ? 'text-[#9EE637]' : 'text-[#e6edf3]'}`}>
-          {value + live}
+        <span className={`text-sm font-semibold tabular-nums ${empty ? 'text-[#484f58]' : hasLive ? 'text-[#9EE637]' : 'text-[#e6edf3]'}`}>
+          {empty ? '–' : value + live}
         </span>
-      </span>
+      </div>
     </div>
   )
 }

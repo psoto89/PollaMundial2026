@@ -46,6 +46,12 @@ export default function SiteNav() {
   // Enlaces que van dentro del menú (hamburguesa en móvil, fila en desktop)
   const menuLinks = (onClick?: () => void) => (
     <>
+      <Link href="/grupos" onClick={onClick} className="text-[#768390] hover:text-[#e6edf3] transition-colors">
+        Polla 1
+      </Link>
+      <Link href="/eliminacion" onClick={onClick} className="text-[#768390] hover:text-[#e6edf3] transition-colors">
+        Polla 2
+      </Link>
       <Link href="/reglas" onClick={onClick} className="text-[#768390] hover:text-[#e6edf3] transition-colors">
         Reglas
       </Link>
