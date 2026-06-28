@@ -371,7 +371,7 @@ export default function LeaderboardTable({
                 {medal ?? idx + 1}
               </span>
 
-              {/* Nombre */}
+              {/* Nombre + columnas inline (Grupos · Elim · Clasif · Preg) */}
               <div className="flex-1 min-w-0">
                 <Link
                   href={href}
@@ -380,14 +380,25 @@ export default function LeaderboardTable({
                 >
                   {p?.nombre ?? row.participant_id}
                 </Link>
-                {liveGain > 0 && (
-                  <span className="text-xs font-semibold text-[#9EE637]">+{liveGain} en vivo</span>
-                )}
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 text-[11px] text-[#768390]">
+                  <InlineStat label="Grupos" value={row.total_grupos + live.grupos} live={live.grupos} on={scope === 'grupos'} />
+                  <span className="text-[#30363d]">·</span>
+                  <InlineStat label="Elim" value={row.total_eliminacion + liveElim} live={liveElim} on={scope === 'eliminacion'} />
+                  <span className="text-[#30363d]">·</span>
+                  <InlineStat label="Clasif" value={row.total_clasificados + clasifLive} live={clasifLive} />
+                  <span className="text-[#30363d]">·</span>
+                  <InlineStat label="Preg" value={row.total_preguntas} />
+                </div>
               </div>
 
-              {/* Total + gap al líder */}
+              {/* Total/métrica + gap al líder */}
               <div className="shrink-0 text-right">
-                <div className="text-2xl font-black tabular-nums text-[#9EE637] leading-none">{metric}</div>
+                {liveGain > 0 && (
+                  <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
+                    +{liveGain}
+                  </span>
+                )}
+                <div className="text-2xl font-black tabular-nums text-[#9EE637] leading-none mt-0.5">{metric}</div>
                 <div className="text-[11px] mt-1 text-[#768390]">
                   {isLeader ? <span className="text-[#9EE637] font-semibold">Líder</span> : `${gap} pts`}
                 </div>
@@ -435,6 +446,23 @@ export default function LeaderboardTable({
         )
       })}
     </div>
+  )
+}
+
+/** Columna inline dentro de la tarjeta (Grupos · Elim · Clasif · Preg).
+ *  `on` resalta la métrica por la que ordena la polla actual. */
+function InlineStat({
+  label, value, live = 0, on = false,
+}: { label: string; value: number; live?: number; on?: boolean }) {
+  const hasLive = live > 0
+  return (
+    <span className="inline-flex items-baseline gap-1">
+      <span className={on ? 'text-[#9EE637] font-semibold' : ''}>{label}</span>
+      <span className={`tabular-nums font-semibold ${hasLive ? 'text-[#9EE637]' : on ? 'text-[#e6edf3]' : 'text-[#adbac7]'}`}>
+        {value}
+      </span>
+      {hasLive && <span className="text-[9px] text-[#9EE637]">+{live}</span>}
+    </span>
   )
 }
 
