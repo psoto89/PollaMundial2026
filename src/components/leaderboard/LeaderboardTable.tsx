@@ -399,56 +399,55 @@ export default function LeaderboardTable({
               type="button"
               onClick={() => toggleExpanded(row.participant_id)}
               aria-expanded={isOpen}
-              className="w-full flex items-center gap-3 p-3.5 text-left hover:bg-white/[0.02]"
+              className="w-full p-3.5 text-left hover:bg-white/[0.02]"
             >
-              {/* Medalla / posición */}
-              <span
-                className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold tabular-nums
-                  ${medal ? 'text-lg' : 'bg-[#0d1117] border border-[#30363d] text-[#768390]'}`}
-              >
-                {medal ?? idx + 1}
-              </span>
+              {/* Fila 1: medalla + nombre + total */}
+              <div className="flex items-center gap-3">
+                <span
+                  className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold tabular-nums
+                    ${medal ? 'text-lg' : 'bg-[#0d1117] border border-[#30363d] text-[#768390]'}`}
+                >
+                  {medal ?? idx + 1}
+                </span>
 
-              {/* Nombre + columnas inline (buckets de la polla) */}
-              <div className="flex-1 min-w-0">
                 <Link
                   href={href}
                   onClick={(e) => e.stopPropagation()}
-                  className="font-semibold text-[#e6edf3] hover:text-[#9EE637] transition-colors block truncate"
+                  className="flex-1 min-w-0 font-semibold text-[#e6edf3] hover:text-[#9EE637] transition-colors block truncate"
                 >
                   {p?.nombre ?? row.participant_id}
                 </Link>
-                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 text-[11px] text-[#768390]">
-                  {buckets.map((b, i) => (
-                    <Fragment key={b.key}>
-                      {i > 0 && <span className="text-[#30363d]">·</span>}
-                      <InlineStat label={b.label} value={b.value + b.live} live={b.live} />
-                    </Fragment>
-                  ))}
+
+                <div className="shrink-0 text-right">
+                  {liveGain > 0 && (
+                    <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
+                      +{liveGain}
+                    </span>
+                  )}
+                  <div className="text-2xl font-black tabular-nums text-[#9EE637] leading-none mt-0.5">{metric}</div>
+                  <div className="text-[11px] mt-0.5 text-[#768390]">
+                    {isLeader ? <span className="text-[#9EE637] font-semibold">Líder</span> : `${gap} pts`}
+                  </div>
                 </div>
+
+                <svg
+                  viewBox="0 0 24 24"
+                  className={`w-4 h-4 text-[#768390] shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+                  fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+                >
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
               </div>
 
-              {/* Total de la polla + gap al líder */}
-              <div className="shrink-0 text-right">
-                {liveGain > 0 && (
-                  <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
-                    +{liveGain}
-                  </span>
-                )}
-                <div className="text-2xl font-black tabular-nums text-[#9EE637] leading-none mt-0.5">{metric}</div>
-                <div className="text-[11px] mt-1 text-[#768390]">
-                  {isLeader ? <span className="text-[#9EE637] font-semibold">Líder</span> : `${gap} pts`}
-                </div>
+              {/* Fila 2: desglose en una sola línea, ancho completo */}
+              <div className="flex items-center justify-between gap-x-2 mt-2.5 text-[11px] text-[#768390] whitespace-nowrap overflow-x-auto">
+                {buckets.map((b, i) => (
+                  <Fragment key={b.key}>
+                    {i > 0 && <span className="text-[#30363d]">·</span>}
+                    <InlineStat label={b.label} value={b.value + b.live} live={b.live} />
+                  </Fragment>
+                ))}
               </div>
-
-              {/* Chevron */}
-              <svg
-                viewBox="0 0 24 24"
-                className={`w-4 h-4 text-[#768390] shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-              >
-                <path d="M6 9l6 6 6-6" />
-              </svg>
             </button>
 
             {/* Desglose: chips de los buckets de la polla */}
