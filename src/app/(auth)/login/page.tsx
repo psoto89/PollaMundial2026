@@ -44,9 +44,10 @@ export default function LoginPage() {
 
   return (
     <div className="max-w-md mx-auto py-12">
-      <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight mb-2">Entrar</h1>
+      <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight mb-2">Crea tu cuenta o entra</h1>
       <p className="text-sm text-[#768390] mb-6">
-        Escribe tu correo y te enviamos un enlace mágico para entrar — sin contraseña.
+        Escribe tu correo y te enviamos un enlace mágico — sin contraseña. Si es tu primera vez,
+        tu cuenta se crea automáticamente.
       </p>
 
       {status === 'sent' ? (
@@ -77,7 +78,7 @@ export default function LoginPage() {
           </button>
           {status === 'error' && <p className="text-sm text-[#f85149]">{errorMsg}</p>}
           <p className="text-xs text-[#768390]">
-            Usa el correo que el admin registró para ti. Si no estás en la lista, contáctalo.
+            Tras entrar, el admin vinculará tu cuenta a tu participante de la polla.
           </p>
         </form>
       )}

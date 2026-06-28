@@ -84,6 +84,12 @@ export interface ScoresCache {
   total: number
   total_grupos: number
   total_eliminacion: number
+  // Subtotales por ronda de eliminación (suma = total_eliminacion)
+  total_r32: number
+  total_r16: number
+  total_qf: number
+  total_sf: number
+  total_final: number
   total_clasificados: number
   total_semis: number
   total_preguntas: number

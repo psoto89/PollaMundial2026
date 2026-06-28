@@ -62,13 +62,32 @@ export async function POST(req: NextRequest) {
     const semisOfficial = buildSemisOfficial(officialResults ?? [])
     const questionOfficial = buildQuestionOfficial(officialResults ?? [])
 
-    // Separar resultados de grupos vs eliminación (misma regla de marcador para ambos)
+    // Separar resultados de grupos vs eliminación, y la eliminación por RONDA
+    // (misma regla de marcador para todos; 'tercer_puesto' se pliega en 'final').
     type FinishedMatch = { id: string; fase: string; goles_local: number; goles_visitante: number }
+    type RoundKey = 'r32' | 'r16' | 'qf' | 'sf' | 'final'
+    const FASE_TO_ROUND: Record<string, RoundKey> = {
+      dieciseisavos: 'r32',
+      octavos: 'r16',
+      cuartos: 'qf',
+      semis: 'sf',
+      final: 'final',
+      tercer_puesto: 'final',
+    }
     const grupoResultMap = new Map<string, { golesLocal: number; golesVisitante: number }>()
     const elimResultMap = new Map<string, { golesLocal: number; golesVisitante: number }>()
+    const roundResultMaps: Record<RoundKey, Map<string, { golesLocal: number; golesVisitante: number }>> = {
+      r32: new Map(), r16: new Map(), qf: new Map(), sf: new Map(), final: new Map(),
+    }
     for (const m of (finishedMatches ?? []) as FinishedMatch[]) {
-      const target = m.fase === 'grupos' ? grupoResultMap : elimResultMap
-      target.set(m.id, { golesLocal: m.goles_local, golesVisitante: m.goles_visitante })
+      const res = { golesLocal: m.goles_local, golesVisitante: m.goles_visitante }
+      if (m.fase === 'grupos') {
+        grupoResultMap.set(m.id, res)
+      } else {
+        elimResultMap.set(m.id, res)
+        const round = FASE_TO_ROUND[m.fase]
+        if (round) roundResultMaps[round].set(m.id, res)
+      }
     }
 
     // Agrupar pronósticos por participante
@@ -84,7 +103,13 @@ export async function POST(req: NextRequest) {
       type SemiPred = { puesto: string; teams: { nombre: string } }
       const partPreds = groupPredsByPart.get(p.id) ?? []
       const totalGrupos = calcGroups(partPreds, grupoResultMap)
-      const totalEliminacion = calcGroups(partPreds, elimResultMap)
+      // Subtotales por ronda (chips de la tabla). total_eliminacion = suma de los 5.
+      const totalR32 = calcGroups(partPreds, roundResultMaps.r32)
+      const totalR16 = calcGroups(partPreds, roundResultMaps.r16)
+      const totalQf = calcGroups(partPreds, roundResultMaps.qf)
+      const totalSf = calcGroups(partPreds, roundResultMaps.sf)
+      const totalFinalRound = calcGroups(partPreds, roundResultMaps.final)
+      const totalEliminacion = totalR32 + totalR16 + totalQf + totalSf + totalFinalRound
       const totalClasificados = calcQualify((qualPredsByPart.get(p.id) ?? []) as unknown as QualPred[], qualifyOfficial)
       const totalSemis = calcSemis((semiPredsByPart.get(p.id) ?? []) as unknown as SemiPred[], semisOfficial)
       const totalPreguntas = calcQuestions(questionPredsByPart.get(p.id) ?? [], questionOfficial)
@@ -95,6 +120,11 @@ export async function POST(req: NextRequest) {
         total,
         total_grupos: totalGrupos,
         total_eliminacion: totalEliminacion,
+        total_r32: totalR32,
+        total_r16: totalR16,
+        total_qf: totalQf,
+        total_sf: totalSf,
+        total_final: totalFinalRound,
         total_clasificados: totalClasificados,
         total_semis: totalSemis,
         total_preguntas: totalPreguntas,
