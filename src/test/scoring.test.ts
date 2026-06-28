@@ -119,12 +119,12 @@ describe('scoreQualify', () => {
     expect(r).toEqual({ clasificado: 0, posicion: 0, total: 0 })
   })
 
-  it('mejor tercero acertado → +4 sin bonus posición', () => {
+  it('mejor tercero acertado con posición exacta (3=3) → +8', () => {
     const r = scoreQualify(
       [{ grupo: 'A', posicion: 3, teamNombre: 'México' }],
       official,
     )
-    expect(r).toEqual({ clasificado: 4, posicion: 0, total: 4 })
+    expect(r).toEqual({ clasificado: 4, posicion: 4, total: 8 })
   })
 
   it('mejor tercero NO en la lista → 0', () => {
@@ -135,18 +135,34 @@ describe('scoreQualify', () => {
     expect(r).toEqual({ clasificado: 0, posicion: 0, total: 0 })
   })
 
+  it('pronostica 3º pero el equipo quedó 2º → +4 (clasificó, otra posición)', () => {
+    const r = scoreQualify(
+      [{ grupo: 'J', posicion: 3, teamNombre: 'Argentina' }], // Argentina quedó 2º
+      official,
+    )
+    expect(r).toEqual({ clasificado: 4, posicion: 0, total: 4 })
+  })
+
+  it('pronostica 2º pero el equipo quedó mejor tercero → +4', () => {
+    const r = scoreQualify(
+      [{ grupo: 'A', posicion: 2, teamNombre: 'México' }], // México es mejor tercero (pos 3)
+      official,
+    )
+    expect(r).toEqual({ clasificado: 4, posicion: 0, total: 4 })
+  })
+
   it('múltiples aciertos → suma correcta', () => {
     const r = scoreQualify(
       [
         { grupo: 'H', posicion: 1, teamNombre: 'España' },  // +4+4
         { grupo: 'C', posicion: 1, teamNombre: 'Brasil' },  // +4+4
-        { grupo: 'A', posicion: 3, teamNombre: 'México' },  // +4
+        { grupo: 'A', posicion: 3, teamNombre: 'México' },  // +4+4 (3=3 exacto)
         { grupo: 'J', posicion: 2, teamNombre: 'Argentina'},// +4+4
         { grupo: 'B', posicion: 1, teamNombre: 'Japón' },   // 0
       ],
       official,
     )
-    expect(r.total).toBe(28) // 8+8+4+8+0
+    expect(r.total).toBe(32) // 8+8+8+8+0
   })
 
   it('pred vacía → 0', () => {
