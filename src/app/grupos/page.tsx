@@ -40,7 +40,7 @@ export default async function GruposPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight">⚽ Polla 1 · Fase de Grupos</h1>
-          <p className="text-sm text-[#768390] mt-1">Posiciones por puntos de los 72 partidos de grupos</p>
+          <p className="text-sm text-[#768390] mt-1">Grupos + clasificados + preguntas · cierra al final con las preguntas</p>
         </div>
         <Link href="/" className="text-xs text-[#768390] hover:text-[#9EE637]">← Inicio</Link>
       </div>

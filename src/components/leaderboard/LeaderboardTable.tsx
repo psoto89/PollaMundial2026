@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { Fragment, useEffect, useState, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { scoreGroupMatch, scoreQualify, type QualifyPred, type QualifyOfficial } from '@/lib/scoring'
@@ -97,6 +97,49 @@ interface LiveDelta {
 }
 const ZERO_DELTA: LiveDelta = { grupos: 0, r32: 0, r16: 0, qf: 0, sf: 0, final: 0 }
 const elimSum = (d: LiveDelta) => d.r32 + d.r16 + d.qf + d.sf + d.final
+
+interface Bucket { key: string; label: string; value: number; live: number }
+
+/**
+ * Buckets de puntos que se muestran según la polla:
+ *  - grupos (Polla 1): Grupos, Clasif, Semis (puestos/semifinalistas), Preguntas.
+ *    NO incluye eliminación (R32..Final), que se juega en la Polla 2.
+ *  - eliminacion (Polla 2): R32, R16, QF, SF, Final.
+ *  - general: todo (grupos + eliminación agregada + clasif + semis + preguntas).
+ * El total de cada polla = suma de sus buckets.
+ */
+function buildBuckets(
+  scope: LeaderboardScope,
+  row: ScoreRow,
+  live: LiveDelta,
+  liveElim: number,
+  clasifLive: number,
+): Bucket[] {
+  if (scope === 'eliminacion') {
+    return [
+      { key: 'r32', label: 'R32', value: row.total_r32, live: live.r32 },
+      { key: 'r16', label: 'R16', value: row.total_r16, live: live.r16 },
+      { key: 'qf', label: 'QF', value: row.total_qf, live: live.qf },
+      { key: 'sf', label: 'SF', value: row.total_sf, live: live.sf },
+      { key: 'final', label: 'Final', value: row.total_final, live: live.final },
+    ]
+  }
+  if (scope === 'grupos') {
+    return [
+      { key: 'grupos', label: 'Grupos', value: row.total_grupos, live: live.grupos },
+      { key: 'clasif', label: 'Clasif', value: row.total_clasificados, live: clasifLive },
+      { key: 'semis', label: 'Semis', value: row.total_semis, live: 0 },
+      { key: 'preg', label: 'Preg', value: row.total_preguntas, live: 0 },
+    ]
+  }
+  return [
+    { key: 'grupos', label: 'Grupos', value: row.total_grupos, live: live.grupos },
+    { key: 'elim', label: 'Elim', value: row.total_eliminacion, live: liveElim },
+    { key: 'clasif', label: 'Clasif', value: row.total_clasificados, live: clasifLive },
+    { key: 'semis', label: 'Semis', value: row.total_semis, live: 0 },
+    { key: 'preg', label: 'Preg', value: row.total_preguntas, live: 0 },
+  ]
+}
 
 export default function LeaderboardTable({
   initialScores,
@@ -200,21 +243,16 @@ export default function LeaderboardTable({
 
   const hasLive = liveMatches.length > 0
 
-  // ── Tabla efectiva, ordenada por la métrica del scope ───────────────────────
+  // ── Tabla efectiva: total = suma de los buckets de la polla; ordenada ────────
   const displayScores = useMemo(() => {
     const rows = scores.map((row) => {
       const live = liveDeltaByParticipant.get(row.participant_id) ?? ZERO_DELTA
       const liveElim = elimSum(live)
       const clasifLive = qualifyLiveDeltaByParticipant.get(row.participant_id) ?? 0
-      const gruposMetric = row.total_grupos + live.grupos
-      const elimMetric = row.total_eliminacion + liveElim
-      const generalMetric = row.total + live.grupos + liveElim + clasifLive
-      const metric =
-        scope === 'grupos' ? gruposMetric : scope === 'eliminacion' ? elimMetric : generalMetric
-      // Ganancia tentativa en vivo para el scope actual (badge "+N puntos")
-      const liveGain =
-        scope === 'grupos' ? live.grupos : scope === 'eliminacion' ? liveElim : live.grupos + liveElim + clasifLive
-      return { row, live, liveElim, clasifLive, metric, liveGain }
+      const buckets = buildBuckets(scope, row, live, liveElim, clasifLive)
+      const metric = buckets.reduce((s, b) => s + b.value + b.live, 0)
+      const liveGain = buckets.reduce((s, b) => s + b.live, 0)
+      return { row, live, buckets, metric, liveGain }
     })
     rows.sort((a, b) => {
       if (b.metric !== a.metric) return b.metric - a.metric
@@ -314,7 +352,8 @@ export default function LeaderboardTable({
   }
 
   const scopeLabel =
-    scope === 'grupos' ? 'fase de grupos' : scope === 'eliminacion' ? 'eliminación' : 'todo el torneo'
+    scope === 'grupos' ? 'Etapa 1 (grupos + clasificados + preguntas)'
+    : scope === 'eliminacion' ? 'eliminación' : 'todo el torneo'
 
   return (
     <div className="space-y-2.5">
@@ -328,7 +367,7 @@ export default function LeaderboardTable({
         Posiciones por <span className="text-[#e6edf3] font-medium">{scopeLabel}</span> · toca una tarjeta para ver el desglose
       </p>
 
-      {displayScores.map(({ row, live, liveElim, clasifLive, metric, liveGain }, idx) => {
+      {displayScores.map(({ row, buckets, metric, liveGain }, idx) => {
         const flash = flashMap.get(row.participant_id)
         const p = row.participants
         const href = `/participant/${p?.id ?? row.participant_id}`
@@ -337,7 +376,6 @@ export default function LeaderboardTable({
         const gap = metric - leaderMetric // <= 0
         const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null
 
-        // Tarjetas top-3 con tinte; resto neutro
         const rankTint =
           idx === 0
             ? 'border-[#d9a441]/50 bg-gradient-to-br from-[#d9a441]/12 to-transparent'
@@ -371,7 +409,7 @@ export default function LeaderboardTable({
                 {medal ?? idx + 1}
               </span>
 
-              {/* Nombre + columnas inline (Grupos · Elim · Clasif · Preg) */}
+              {/* Nombre + columnas inline (buckets de la polla) */}
               <div className="flex-1 min-w-0">
                 <Link
                   href={href}
@@ -381,17 +419,16 @@ export default function LeaderboardTable({
                   {p?.nombre ?? row.participant_id}
                 </Link>
                 <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1 text-[11px] text-[#768390]">
-                  <InlineStat label="Grupos" value={row.total_grupos + live.grupos} live={live.grupos} on={scope === 'grupos'} />
-                  <span className="text-[#30363d]">·</span>
-                  <InlineStat label="Elim" value={row.total_eliminacion + liveElim} live={liveElim} on={scope === 'eliminacion'} />
-                  <span className="text-[#30363d]">·</span>
-                  <InlineStat label="Clasif" value={row.total_clasificados + clasifLive} live={clasifLive} />
-                  <span className="text-[#30363d]">·</span>
-                  <InlineStat label="Preg" value={row.total_preguntas} />
+                  {buckets.map((b, i) => (
+                    <Fragment key={b.key}>
+                      {i > 0 && <span className="text-[#30363d]">·</span>}
+                      <InlineStat label={b.label} value={b.value + b.live} live={b.live} />
+                    </Fragment>
+                  ))}
                 </div>
               </div>
 
-              {/* Total/métrica + gap al líder */}
+              {/* Total de la polla + gap al líder */}
               <div className="shrink-0 text-right">
                 {liveGain > 0 && (
                   <span className="text-[10px] font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">
@@ -414,23 +451,17 @@ export default function LeaderboardTable({
               </svg>
             </button>
 
-            {/* Desglose: chips por fase */}
+            {/* Desglose: chips de los buckets de la polla */}
             {isOpen && (
               <div className="px-3.5 pb-3.5 pt-1 border-t border-white/5">
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                  <PhaseChip label="Grupos" value={row.total_grupos} live={live.grupos} highlight={scope === 'grupos'} />
-                  <PhaseChip label="R32" value={row.total_r32} live={live.r32} highlight={scope === 'eliminacion'} />
-                  <PhaseChip label="R16" value={row.total_r16} live={live.r16} highlight={scope === 'eliminacion'} />
-                  <PhaseChip label="QF" value={row.total_qf} live={live.qf} highlight={scope === 'eliminacion'} />
-                  <PhaseChip label="SF" value={row.total_sf} live={live.sf} highlight={scope === 'eliminacion'} />
-                  <PhaseChip label="Final" value={row.total_final} live={live.final} highlight={scope === 'eliminacion'} />
-                  <PhaseChip label="Clasif." value={row.total_clasificados} live={clasifLive} />
-                  <PhaseChip label="Preguntas" value={row.total_preguntas} />
+                  {buckets.map((b) => (
+                    <PhaseChip key={b.key} label={b.label} value={b.value} live={b.live} />
+                  ))}
                 </div>
                 <div className="flex items-center justify-between mt-2.5">
                   <span className="text-[11px] text-[#768390]">
-                    Eliminación: <span className="text-[#e6edf3] font-medium tabular-nums">{row.total_eliminacion + liveElim}</span>
-                    {' · '}Total: <span className="text-[#e6edf3] font-medium tabular-nums">{row.total + live.grupos + liveElim + clasifLive}</span>
+                    Total: <span className="text-[#9EE637] font-bold tabular-nums">{metric}</span>
                   </span>
                   <Link
                     href={href}
@@ -449,34 +480,24 @@ export default function LeaderboardTable({
   )
 }
 
-/** Columna inline dentro de la tarjeta (Grupos · Elim · Clasif · Preg).
- *  `on` resalta la métrica por la que ordena la polla actual. */
-function InlineStat({
-  label, value, live = 0, on = false,
-}: { label: string; value: number; live?: number; on?: boolean }) {
+/** Columna inline dentro de la tarjeta (Grupos · Clasif · …). */
+function InlineStat({ label, value, live = 0 }: { label: string; value: number; live?: number }) {
   const hasLive = live > 0
   return (
     <span className="inline-flex items-baseline gap-1">
-      <span className={on ? 'text-[#9EE637] font-semibold' : ''}>{label}</span>
-      <span className={`tabular-nums font-semibold ${hasLive ? 'text-[#9EE637]' : on ? 'text-[#e6edf3]' : 'text-[#adbac7]'}`}>
-        {value}
-      </span>
+      <span>{label}</span>
+      <span className={`tabular-nums font-semibold ${hasLive ? 'text-[#9EE637]' : 'text-[#adbac7]'}`}>{value}</span>
       {hasLive && <span className="text-[9px] text-[#9EE637]">+{live}</span>}
     </span>
   )
 }
 
-/** Chip de un bucket de puntos. `highlight` marca la fase del scope actual. */
-function PhaseChip({
-  label, value, live = 0, highlight = false,
-}: { label: string; value: number; live?: number; highlight?: boolean }) {
+/** Chip de un bucket de puntos en el desglose expandido. */
+function PhaseChip({ label, value, live = 0 }: { label: string; value: number; live?: number }) {
   const hasLive = live > 0
   const empty = value === 0 && !hasLive
   return (
-    <div
-      className={`rounded-lg px-2.5 py-1.5 border
-        ${highlight ? 'border-[#9EE637]/40 bg-[#9EE637]/5' : 'border-[#21262d] bg-[#0d1117]'}`}
-    >
+    <div className="rounded-lg px-2.5 py-1.5 border border-[#21262d] bg-[#0d1117]">
       <div className="text-[10px] text-[#768390] uppercase tracking-wide truncate">{label}</div>
       <div className="flex items-center gap-1 mt-0.5">
         {hasLive && (
