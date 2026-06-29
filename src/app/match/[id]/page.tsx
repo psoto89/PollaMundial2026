@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { scoreGroupMatch, scoreKnockoutMatch } from '@/lib/scoring'
+import { scoreGroupMatch, scoreKnockoutMatch, deriveAdvancer } from '@/lib/scoring'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 
@@ -80,10 +80,15 @@ export default async function MatchPage({ params, searchParams }: Props) {
     predsHidden = Date.now() < deadlineMs
   }
 
-  // Equipo que avanzó oficialmente (para marcar el acierto del "clasificado")
+  // Equipo que avanzó (derivado del marcador; empate → el explícito por penales)
+  const officialAdvancerId = deriveAdvancer(
+    match.goles_local, match.goles_visitante,
+    match.equipo_local?.id ?? null, match.equipo_visitante?.id ?? null,
+    match.advancer_team_id,
+  )
   const advancerNombre =
-    match.advancer_team_id === match.equipo_local?.id ? match.equipo_local?.nombre :
-    match.advancer_team_id === match.equipo_visitante?.id ? match.equipo_visitante?.nombre :
+    officialAdvancerId === match.equipo_local?.id ? match.equipo_local?.nombre :
+    officialAdvancerId === match.equipo_visitante?.id ? match.equipo_visitante?.nombre :
     null
 
   // ─── Polla 2 (cuadro): pronósticos por slot, puntaje knockout ──────────────
@@ -93,19 +98,26 @@ export default async function MatchPage({ params, searchParams }: Props) {
       .select('participant_id, pred_local, pred_visitante, advancer_team_id, participants(nombre), advancer:teams!advancer_team_id(nombre)')
       .eq('slot', match.bracket_slot)
 
+    const localId = match.equipo_local?.id ?? null
+    const visitanteId = match.equipo_visitante?.id ?? null
+    // Oficial: el que va ganando (o ganó) pasa; empate → el explícito por penales.
+    const officialAdvancer = deriveAdvancer(match.goles_local, match.goles_visitante, localId, visitanteId, match.advancer_team_id)
+
     const preds = (predsRaw ?? []) as unknown as BracketPredRow[]
     const scored = preds.map((p) => {
+      // El avance del usuario se deriva de SU marcador (gana → pasa); empate → su explícito.
+      const predAdvancer = deriveAdvancer(p.pred_local, p.pred_visitante, localId, visitanteId, p.advancer_team_id)
+      const predAdvancerName = predAdvancer === localId ? match.equipo_local?.nombre
+        : predAdvancer === visitanteId ? match.equipo_visitante?.nombre
+        : p.advancer?.nombre ?? null
       const score = (finished || isLive)
         ? scoreKnockoutMatch(
-            { predLocal: p.pred_local, predVisitante: p.pred_visitante, advancer: p.advancer_team_id },
-            {
-              golesLocal: match.goles_local,
-              golesVisitante: match.goles_visitante,
-              advancer: finished ? match.advancer_team_id : null, // el clasificado solo cuenta al finalizar
-            },
+            { predLocal: p.pred_local, predVisitante: p.pred_visitante, advancer: predAdvancer },
+            { golesLocal: match.goles_local, golesVisitante: match.goles_visitante, advancer: officialAdvancer },
           )
         : null
-      return { ...p, score }
+      const aciertoAdvancer = !!((finished || isLive) && predAdvancer && officialAdvancer && predAdvancer === officialAdvancer)
+      return { ...p, score, predAdvancerName, aciertoAdvancer }
     }).sort((a, b) => (b.score?.total ?? 0) - (a.score?.total ?? 0))
 
     const highlighted = highlightId ? scored.find((p) => p.participant_id === highlightId) : undefined
@@ -136,7 +148,7 @@ export default async function MatchPage({ params, searchParams }: Props) {
               {ordered.map((p) => {
                 const pts = p.score?.total ?? null
                 const isH = highlightId != null && p.participant_id === highlightId
-                const aciertoAdvancer = finished && p.advancer_team_id && p.advancer_team_id === match.advancer_team_id
+                const aciertoAdvancer = p.aciertoAdvancer
                 const bg = isH ? 'bg-[#9EE637]/10 ring-1 ring-inset ring-[#9EE637]/40' : (pts ?? 0) > 0 ? 'bg-[#9EE637]/5' : ''
                 return (
                   <div key={p.participant_id} className={`flex items-center gap-3 px-4 py-3 ${bg}`}>
@@ -147,12 +159,12 @@ export default async function MatchPage({ params, searchParams }: Props) {
                       {p.participants?.nombre ?? p.participant_id}
                     </Link>
 
-                    {/* Quién pasa (su pick) */}
-                    {p.advancer?.nombre && (
+                    {/* Quién pasa (derivado de su marcador) */}
+                    {p.predAdvancerName && (
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
                         aciertoAdvancer ? 'bg-[#9EE637]/20 text-[#9EE637]' : 'bg-[#21262d] text-[#768390]'
                       }`}>
-                        {aciertoAdvancer ? '✓ ' : ''}pasa {p.advancer.nombre}
+                        {aciertoAdvancer ? '✓ ' : ''}pasa {p.predAdvancerName}
                       </span>
                     )}
 

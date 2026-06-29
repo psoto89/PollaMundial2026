@@ -273,6 +273,23 @@ export interface KnockoutMatchResult {
  *   - Equipo clasificado correcto (quién avanza) → +2, independiente del marcador
  *   → máximo 7 por partido.
  */
+/**
+ * Quién avanza, derivado del marcador: el que mete más goles pasa automáticamente.
+ * Si el marcador es empate (penales/alargue), usa el avance explícito (fallback).
+ */
+export function deriveAdvancer(
+  golesLocal: number | null,
+  golesVisitante: number | null,
+  localId: string | null,
+  visitanteId: string | null,
+  fallbackAdvancer: string | null,
+): string | null {
+  if (golesLocal === null || golesVisitante === null) return fallbackAdvancer
+  if (golesLocal > golesVisitante) return localId
+  if (golesVisitante > golesLocal) return visitanteId
+  return fallbackAdvancer // empate → definido por penales (explícito)
+}
+
 export function scoreKnockoutMatch(
   pred: KnockoutMatchPred,
   result: KnockoutMatchResult,

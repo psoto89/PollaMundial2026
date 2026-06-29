@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { BRACKET_2026 } from '@/config/bracket2026'
 
 export interface SavePredResult {
@@ -49,7 +50,12 @@ export async function saveBracketSlot(
   if (rpcErr) return { ok: false, error: 'No se pudo validar el cierre' }
   if (!isOpen) return { ok: false, error: 'El pronóstico de este partido ya cerró' }
 
-  const { error } = await supabase
+  // Escritura con service role: ya autenticamos al usuario, validamos que el slot
+  // sea suyo (participant_id de SU cuenta) y que esté abierto. Esto evita que el
+  // upsert+RLS descarte la fila en silencio para usuarios self-service (devolvía
+  // "guardado" sin persistir). Confirmamos la fila escrita con .select().
+  const admin = createAdminClient()
+  const { data: saved, error } = await admin
     .from('predictions_bracket')
     .upsert(
       {
@@ -61,10 +67,11 @@ export async function saveBracketSlot(
       },
       { onConflict: 'participant_id,slot' },
     )
+    .select('id')
+    .single()
 
-  if (error) {
-    // El RLS rechaza si no es dueño o el slot ya cerró
-    return { ok: false, error: 'No se pudo guardar (cerrado o sin permiso)' }
+  if (error || !saved) {
+    return { ok: false, error: 'No se pudo guardar, intenta de nuevo' }
   }
 
   revalidatePath('/mis-pronosticos')

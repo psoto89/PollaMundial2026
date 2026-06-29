@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { scoreGroupMatch, scoreQualify, scoreSemis, scoreKnockoutMatch, answersMatch, type QualifyOfficial } from '@/lib/scoring'
+import { scoreGroupMatch, scoreQualify, scoreSemis, scoreKnockoutMatch, deriveAdvancer, answersMatch, type QualifyOfficial } from '@/lib/scoring'
 import { computeGroupStandings } from '@/lib/standings'
 import { ROUND_LABELS, ROUND_ORDER, type RoundKey } from '@/config/bracket2026'
 import PollaTabs from './PollaTabs'
@@ -263,12 +263,20 @@ export default async function ParticipantPage({ params }: Props) {
       if (!m) continue
       const finished = m.estado === 'finished'
       const live = m.estado === 'live'
+      const localId = m.equipo_local?.id ?? null
+      const visitanteId = m.equipo_visitante?.id ?? null
+      // El que avanza se deriva del marcador (gana → pasa); el empate usa el explícito.
+      const predAdvancer = deriveAdvancer(p.pred_local, p.pred_visitante, localId, visitanteId, p.advancer_team_id)
+      const officialAdvancer = deriveAdvancer(m.goles_local, m.goles_visitante, localId, visitanteId, m.advancer_team_id)
       const score = (finished || live)
         ? scoreKnockoutMatch(
-            { predLocal: p.pred_local, predVisitante: p.pred_visitante, advancer: p.advancer_team_id },
-            { golesLocal: m.goles_local, golesVisitante: m.goles_visitante, advancer: finished ? m.advancer_team_id : null },
+            { predLocal: p.pred_local, predVisitante: p.pred_visitante, advancer: predAdvancer },
+            { golesLocal: m.goles_local, golesVisitante: m.goles_visitante, advancer: officialAdvancer },
           )
         : null
+      const predAdvancerName = predAdvancer === localId ? m.equipo_local?.nombre
+        : predAdvancer === visitanteId ? m.equipo_visitante?.nombre
+        : p.advancer?.nombre ?? null
       const round = m.fase as RoundKey
       const arr = bracketByRound.get(round) ?? []
       arr.push({
@@ -276,12 +284,12 @@ export default async function ParticipantPage({ params }: Props) {
         localName: m.equipo_local?.nombre ?? '—',
         visitanteName: m.equipo_visitante?.nombre ?? '—',
         predLocal: p.pred_local, predVisitante: p.pred_visitante,
-        advancerName: p.advancer?.nombre ?? null, advancerId: p.advancer_team_id,
+        advancerName: predAdvancerName ?? null, advancerId: predAdvancer,
         finished, live,
         golesLocal: m.goles_local, golesVisitante: m.goles_visitante,
-        officialAdvancerId: m.advancer_team_id,
+        officialAdvancerId: officialAdvancer,
         pts: score?.total ?? null,
-        acertoAdvancer: !!(finished && p.advancer_team_id && p.advancer_team_id === m.advancer_team_id),
+        acertoAdvancer: !!((finished || live) && predAdvancer && officialAdvancer && predAdvancer === officialAdvancer),
       })
       bracketByRound.set(round, arr)
     }
@@ -375,6 +383,14 @@ export default async function ParticipantPage({ params }: Props) {
   // Total tentativo en vivo: partidos (grupos + eliminación) + clasificados provisionales.
   const liveTentativeTotal = liveGruposDelta + liveElimDelta + totalQualifyTentative
 
+  // Total de la Polla 1 (grupos + clasificados + semis + preguntas). NO incluye la
+  // eliminación: eso es la Polla 2 (cuadro), que va aparte en su propia pestaña.
+  const polla1Persisted = ((scores?.total_grupos as number) ?? 0)
+    + ((scores?.total_clasificados as number) ?? 0)
+    + ((scores?.total_semis as number) ?? 0)
+    + ((scores?.total_preguntas as number) ?? 0)
+  const polla1Live = liveGruposDelta + totalQualifyTentative
+
   // ─── Panel Polla 2 (cuadro), se muestra en su pestaña ──────────────────────
   const polla2Panel = (
     <div>
@@ -452,7 +468,7 @@ export default async function ParticipantPage({ params }: Props) {
       {scores && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {[
-            { label: 'Total', value: ((scores.total as number) ?? 0) + liveTentativeTotal, live: liveTentativeTotal, highlight: true },
+            { label: 'Total', value: polla1Persisted + polla1Live, live: polla1Live, highlight: true },
             { label: 'Grupos', value: ((scores.total_grupos as number) ?? 0) + liveGruposDelta, live: liveGruposDelta },
             { label: 'Clasificados', value: ((scores.total_clasificados as number) ?? 0) + totalQualifyTentative, live: totalQualifyTentative },
             { label: 'Semis', value: (scores.total_semis as number) ?? 0, live: 0 },
