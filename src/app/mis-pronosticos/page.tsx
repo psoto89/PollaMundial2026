@@ -165,8 +165,8 @@ export default async function MisPronosticosPage() {
       <div>
         <h2 className="text-lg font-semibold text-[#e6edf3] mb-1">Tu cuadro</h2>
         <p className="text-xs text-[#768390] mb-3">
-          Pon el marcador de 90&apos; en cada partido. El que gana avanza solo; si empatas,
-          eliges quién pasa. Editable hasta {deadlineMinutes} min antes de cada partido.
+          Pon el marcador final (incluye alargue si lo hay). El que gana avanza solo; si quedan
+          empatados, eliges quién pasa por penales. Editable hasta {deadlineMinutes} min antes de cada partido.
         </p>
         <InteractiveBracket
           teams={teams}

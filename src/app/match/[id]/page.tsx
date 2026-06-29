@@ -156,7 +156,7 @@ export default async function MatchPage({ params, searchParams }: Props) {
                       </span>
                     )}
 
-                    {/* Marcador 90' */}
+                    {/* Marcador final (incluye alargue) */}
                     <span className="text-sm font-mono text-[#768390] shrink-0">
                       {p.pred_local ?? '–'}–{p.pred_visitante ?? '–'}
                     </span>
@@ -354,7 +354,7 @@ function Scoreboard({
           </div>
           {finished && (
             <span className="text-[10px] font-semibold text-[#768390] uppercase tracking-widest">
-              {isKnockout ? "Final 90'" : 'Resultado final'}
+              {isKnockout ? 'Resultado final' : 'Resultado final'}
             </span>
           )}
         </div>

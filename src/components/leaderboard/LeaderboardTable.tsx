@@ -344,20 +344,41 @@ export default function LeaderboardTable({
     async function refetchLive() {
       const { data: lm } = await supabase
         .from('matches')
-        .select('id, fase, goles_local, goles_visitante')
+        .select('id, fase, goles_local, goles_visitante, bracket_slot')
         .eq('estado', 'live')
-      const matches = (lm ?? []) as LiveMatchLite[]
-      setLiveMatches(matches)
-      const ids = matches.map((m) => m.id)
-      if (ids.length > 0) {
-        const { data: preds } = await supabase
-          .from('predictions_group')
-          .select('participant_id, match_id, pred_local, pred_visitante')
-          .in('match_id', ids)
-        setLivePreds((preds ?? []) as LivePred[])
-      } else {
-        setLivePreds([])
-      }
+      const full = (lm ?? []) as (LiveMatchLite & { bracket_slot: string | null })[]
+      setLiveMatches(full.map(({ id, fase, goles_local, goles_visitante }) => ({ id, fase, goles_local, goles_visitante })))
+      const ids = full.map((m) => m.id)
+      if (ids.length === 0) { setLivePreds([]); return }
+
+      const { data: groupPreds } = await supabase
+        .from('predictions_group')
+        .select('participant_id, match_id, pred_local, pred_visitante')
+        .in('match_id', ids)
+
+      // Polla 2 · cuadro: pronósticos por slot → match_id
+      const slotToMatchId = new Map(
+        full.filter((m) => m.bracket_slot).map((m) => [m.bracket_slot as string, m.id]),
+      )
+      const slots = [...slotToMatchId.keys()]
+      const { data: bracketPreds } = slots.length > 0
+        ? await supabase
+            .from('predictions_bracket')
+            .select('participant_id, slot, pred_local, pred_visitante')
+            .in('slot', slots)
+        : { data: [] }
+      const mappedBracket: LivePred[] = ((bracketPreds ?? []) as {
+        participant_id: string; slot: string; pred_local: number | null; pred_visitante: number | null
+      }[])
+        .filter((p) => p.pred_local !== null && p.pred_visitante !== null)
+        .map((p) => ({
+          participant_id: p.participant_id,
+          match_id: slotToMatchId.get(p.slot) as string,
+          pred_local: p.pred_local as number,
+          pred_visitante: p.pred_visitante as number,
+        }))
+
+      setLivePreds([...((groupPreds ?? []) as LivePred[]), ...mappedBracket])
     }
 
     const channel = supabase

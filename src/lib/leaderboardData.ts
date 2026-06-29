@@ -24,7 +24,7 @@ export async function loadLeaderboardData() {
       .order('total_grupos', { ascending: false }),
     supabase
       .from('matches')
-      .select('id, fase, goles_local, goles_visitante')
+      .select('id, fase, goles_local, goles_visitante, bracket_slot')
       .eq('estado', 'live'),
     supabase
       .from('matches')
@@ -36,11 +36,14 @@ export async function loadLeaderboardData() {
       .select('participant_id, grupo, posicion, teams(nombre)'),
   ])
 
-  const liveMatches = (liveMatchesRaw ?? []) as {
-    id: string; fase: string | null; goles_local: number | null; goles_visitante: number | null
+  const liveMatchesFull = (liveMatchesRaw ?? []) as {
+    id: string; fase: string | null; goles_local: number | null; goles_visitante: number | null; bracket_slot: string | null
   }[]
+  const liveMatches = liveMatchesFull.map(({ id, fase, goles_local, goles_visitante }) => ({
+    id, fase, goles_local, goles_visitante,
+  }))
 
-  // Pronósticos de los partidos en vivo (para puntos tentativos)
+  // Pronósticos (Polla 1 · grupos) de los partidos en vivo, para puntos tentativos
   const liveIds = liveMatches.map((m) => m.id)
   const { data: livePredsRaw } = liveIds.length > 0
     ? await supabase
@@ -49,9 +52,33 @@ export async function loadLeaderboardData() {
         .in('match_id', liveIds)
     : { data: [] }
 
-  const livePreds = (livePredsRaw ?? []) as {
+  const groupLivePreds = (livePredsRaw ?? []) as {
     participant_id: string; match_id: string; pred_local: number; pred_visitante: number
   }[]
+
+  // Pronósticos (Polla 2 · cuadro) de los partidos de eliminación en vivo: por slot → match_id
+  const slotToMatchId = new Map(
+    liveMatchesFull.filter((m) => m.bracket_slot).map((m) => [m.bracket_slot as string, m.id]),
+  )
+  const liveSlots = [...slotToMatchId.keys()]
+  const { data: bracketLivePredsRaw } = liveSlots.length > 0
+    ? await supabase
+        .from('predictions_bracket')
+        .select('participant_id, slot, pred_local, pred_visitante')
+        .in('slot', liveSlots)
+    : { data: [] }
+  const bracketLivePreds = ((bracketLivePredsRaw ?? []) as {
+    participant_id: string; slot: string; pred_local: number | null; pred_visitante: number | null
+  }[])
+    .filter((p) => p.pred_local !== null && p.pred_visitante !== null)
+    .map((p) => ({
+      participant_id: p.participant_id,
+      match_id: slotToMatchId.get(p.slot) as string,
+      pred_local: p.pred_local as number,
+      pred_visitante: p.pred_visitante as number,
+    }))
+
+  const livePreds = [...groupLivePreds, ...bracketLivePreds]
 
   const groupMatches = ((groupMatchesRaw ?? []) as {
     id: string; grupo: string | null; equipo_local_id: string; equipo_visitante_id: string

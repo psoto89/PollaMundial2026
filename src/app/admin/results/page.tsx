@@ -341,11 +341,11 @@ function MatchResultRow({ match, saving, onSave }: MatchResultRowProps) {
         </button>
       </div>
 
-      {/* Clasificado (solo eliminación): el marcador es de 90'; el avance puede
-          definirse por ET/penales y se guarda aparte. */}
+      {/* Clasificado (solo eliminación): el marcador es el FINAL (incluye alargue);
+          si quedan empatados tras 120', el avance se define por penales y se guarda aparte. */}
       {isKnockout && (
         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[#21262d]">
-          <span className="text-xs text-[#768390] shrink-0" title="Se llena solo si hay ganador en 90′. Úsalo solo para definir penales (empate).">Clasifica:</span>
+          <span className="text-xs text-[#768390] shrink-0" title="El marcador es el final (incluye alargue). Define quién pasa, sobre todo si quedan empatados tras 120' (penales).">Clasifica:</span>
           <select
             value={advancer}
             onChange={(e) => setAdvancer(e.target.value)}

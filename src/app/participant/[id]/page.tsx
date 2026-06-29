@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import { scoreGroupMatch, scoreQualify, scoreSemis, answersMatch, type QualifyOfficial } from '@/lib/scoring'
+import { scoreGroupMatch, scoreQualify, scoreSemis, scoreKnockoutMatch, answersMatch, type QualifyOfficial } from '@/lib/scoring'
 import { computeGroupStandings } from '@/lib/standings'
+import { ROUND_LABELS, ROUND_ORDER, type RoundKey } from '@/config/bracket2026'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Puesto, PreguntaKey } from '@/types'
@@ -215,6 +216,79 @@ export default async function ParticipantPage({ params }: Props) {
       .select('scope, key, value'),
   ])
 
+  // ─── Polla 2 · Cuadro eliminatorio (predictions_bracket) ───────────────────
+  const { data: bracketPredsRaw } = await supabase
+    .from('predictions_bracket')
+    .select('slot, advancer_team_id, pred_local, pred_visitante, advancer:teams!advancer_team_id(nombre)')
+    .eq('participant_id', id)
+  const bracketPreds = (bracketPredsRaw ?? []) as unknown as {
+    slot: string; advancer_team_id: string | null
+    pred_local: number | null; pred_visitante: number | null
+    advancer: { nombre: string } | null
+  }[]
+
+  type BracketRow = {
+    slot: string; round: RoundKey; matchNo: number
+    localName: string; visitanteName: string
+    predLocal: number | null; predVisitante: number | null
+    advancerName: string | null; advancerId: string | null
+    finished: boolean; live: boolean
+    golesLocal: number | null; golesVisitante: number | null
+    officialAdvancerId: string | null
+    pts: number | null; acertoAdvancer: boolean
+  }
+  const bracketByRound = new Map<RoundKey, BracketRow[]>()
+  if (bracketPreds.length > 0) {
+    const slots = bracketPreds.map((p) => p.slot)
+    const { data: bMatchesRaw } = await supabase
+      .from('matches')
+      .select(`
+        bracket_slot, fase, kickoff_at, goles_local, goles_visitante, estado, advancer_team_id,
+        equipo_local:teams!equipo_local_id(id, nombre),
+        equipo_visitante:teams!equipo_visitante_id(id, nombre)
+      `)
+      .in('bracket_slot', slots)
+    type BMatch = {
+      bracket_slot: string; fase: string; kickoff_at: string | null
+      goles_local: number | null; goles_visitante: number | null; estado: string
+      advancer_team_id: string | null
+      equipo_local: { id: string; nombre: string } | null
+      equipo_visitante: { id: string; nombre: string } | null
+    }
+    const bySlot = new Map(((bMatchesRaw ?? []) as unknown as BMatch[]).map((m) => [m.bracket_slot, m]))
+
+    for (const p of bracketPreds) {
+      const m = bySlot.get(p.slot)
+      if (!m) continue
+      const finished = m.estado === 'finished'
+      const live = m.estado === 'live'
+      const score = (finished || live)
+        ? scoreKnockoutMatch(
+            { predLocal: p.pred_local, predVisitante: p.pred_visitante, advancer: p.advancer_team_id },
+            { golesLocal: m.goles_local, golesVisitante: m.goles_visitante, advancer: finished ? m.advancer_team_id : null },
+          )
+        : null
+      const round = m.fase as RoundKey
+      const arr = bracketByRound.get(round) ?? []
+      arr.push({
+        slot: p.slot, round, matchNo: 0,
+        localName: m.equipo_local?.nombre ?? '—',
+        visitanteName: m.equipo_visitante?.nombre ?? '—',
+        predLocal: p.pred_local, predVisitante: p.pred_visitante,
+        advancerName: p.advancer?.nombre ?? null, advancerId: p.advancer_team_id,
+        finished, live,
+        golesLocal: m.goles_local, golesVisitante: m.goles_visitante,
+        officialAdvancerId: m.advancer_team_id,
+        pts: score?.total ?? null,
+        acertoAdvancer: !!(finished && p.advancer_team_id && p.advancer_team_id === m.advancer_team_id),
+      })
+      bracketByRound.set(round, arr)
+    }
+  }
+  const bracketRounds = ROUND_ORDER.filter((r) => bracketByRound.has(r))
+  const bracketLiveDelta = [...bracketByRound.values()].flat()
+    .reduce((s, r) => s + (r.live ? (r.pts ?? 0) : 0), 0)
+
   const groupPreds = (groupPredsRaw ?? []) as unknown as GroupPredRow[]
   const qualifyPreds = (qualifyPredsRaw ?? []) as unknown as QualifyPredRow[]
   const semisPreds = (semisPredsRaw ?? []) as unknown as SemisPredRow[]
@@ -335,6 +409,64 @@ export default async function ParticipantPage({ params }: Props) {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Polla 2 · Cuadro eliminatorio */}
+      {bracketRounds.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-[#e6edf3]">🏆 Polla 2 · Cuadro</h2>
+            <span className="inline-flex items-center gap-2">
+              {bracketLiveDelta > 0 && (
+                <span className="text-xs font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">+{bracketLiveDelta} en vivo</span>
+              )}
+              {scores && (
+                <span className="text-sm font-bold text-[#9EE637]">
+                  +{((scores.total_eliminacion as number) ?? 0)
+                    + ((scores.total_bono_octavos as number) ?? 0)
+                    + ((scores.total_bono_cuartos as number) ?? 0)
+                    + ((scores.total_bono_semis as number) ?? 0)
+                    + ((scores.total_bono_finales as number) ?? 0)} pts
+                </span>
+              )}
+            </span>
+          </div>
+          <p className="text-xs text-[#768390] mb-3">
+            Marcador final (incluye alargue) = +5 exacto · +2 signo · +2 si aciertas quién pasa · más bonos de cuadro
+          </p>
+          <div className="space-y-3">
+            {bracketRounds.map((round) => {
+              const rows = bracketByRound.get(round) ?? []
+              return (
+                <div key={round}>
+                  <p className="text-xs font-semibold text-[#768390] uppercase tracking-wider mb-1.5">{ROUND_LABELS[round]}</p>
+                  <div className="divide-y divide-[#21262d] bg-[#161b22] border border-[#30363d] rounded-lg overflow-hidden">
+                    {rows.map((r) => (
+                      <div key={r.slot} className={`flex items-center gap-2 px-3 py-2 text-sm ${(r.pts ?? 0) > 0 ? 'bg-[#9EE637]/5' : ''}`}>
+                        <span className="flex-1 min-w-0 truncate text-[#e6edf3]">
+                          {r.localName} <span className="text-[#9EE637] font-mono">{r.predLocal ?? '–'}–{r.predVisitante ?? '–'}</span> {r.visitanteName}
+                        </span>
+                        {r.advancerName && (
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                            r.acertoAdvancer ? 'bg-[#9EE637]/20 text-[#9EE637]' : 'bg-[#21262d] text-[#768390]'
+                          }`}>
+                            {r.acertoAdvancer ? '✓ ' : ''}pasa {r.advancerName}
+                          </span>
+                        )}
+                        {(r.finished || r.live) && (
+                          <span className="text-xs text-[#768390] shrink-0 font-mono">{r.golesLocal ?? '–'}–{r.golesVisitante ?? '–'}</span>
+                        )}
+                        <span className={`text-xs font-bold tabular-nums shrink-0 w-8 text-right ${(r.pts ?? 0) > 0 ? 'text-[#9EE637]' : 'text-[#444d56]'}`}>
+                          {r.pts !== null ? (r.pts > 0 ? `+${r.pts}` : '—') : '?'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

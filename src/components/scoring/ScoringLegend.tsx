@@ -48,8 +48,8 @@ const SECTIONS: Section[] = [
   {
     titulo: 'Polla 2 · Cuadro — por partido',
     reglas: [
-      { label: 'Marcador exacto de 90′ (ya incluye el signo)', pts: '+5' },
-      { label: 'Solo el signo de 90′ (gana o empata)', pts: '+2' },
+      { label: 'Marcador exacto final, incluye alargue (ya incluye el signo)', pts: '+5' },
+      { label: 'Solo el signo del resultado final (gana o empata)', pts: '+2' },
       { label: 'Aciertas el equipo que clasifica', pts: '+2' },
     ],
   },

@@ -132,17 +132,17 @@ export default function ReglasPage() {
       <Section
         num="5"
         title="Cómo se puntúa el cuadro"
-        subtitle="Marcador de 90′ + quién avanza, de 16avos a la Final"
+        subtitle="Marcador final (incluye alargue) + quién avanza, de 16avos a la Final"
       >
         <p className="text-xs font-semibold text-[#768390] uppercase tracking-wider mb-1">Por partido</p>
         <RuleRow
-          label="Marcador exacto de 90′ + reposición (no cuenta tiempo extra ni penales)"
+          label="Marcador exacto al final del partido (incluye alargue si lo hay; sin contar penales)"
           pts="+5 pts"
           color="blue"
           detail="ya incluye acertar el signo"
         />
         <RuleRow
-          label="Solo el signo de 90′ (gana o empata)"
+          label="Solo el signo del resultado final (gana o empata)"
           pts="+2 pts"
           color="green"
         />
