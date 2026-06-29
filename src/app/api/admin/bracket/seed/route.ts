@@ -31,7 +31,7 @@ const OFFICIAL_R32: { slot: string; local: string; visitante: string }[] = [
   { slot: 'R32-13', local: 'Argentina', visitante: 'Cabo Verde' },
   { slot: 'R32-14', local: 'Australia', visitante: 'Egipto' },
   { slot: 'R32-15', local: 'Suiza', visitante: 'Argelia' },
-  { slot: 'R32-16', local: 'Colombia', visitante: 'Burkina Faso' },
+  { slot: 'R32-16', local: 'Colombia', visitante: 'Ghana' },
 ]
 
 // Alias: nombre oficial (normalizado) → posibles nombres en la tabla teams
