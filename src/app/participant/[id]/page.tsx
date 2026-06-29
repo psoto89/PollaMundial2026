@@ -363,25 +363,18 @@ export default async function ParticipantPage({ params }: Props) {
   const totalQualifyTentative = qualifyScorePerPick.reduce((s, p) => s + p.tentativePts, 0)
   const totalSemisPts = semisScorePerPick.reduce((s, p) => s + p.pts, 0)
 
-  // Delta tentativo en vivo de partidos (mismo cálculo que la tabla general):
-  // por cada partido EN VIVO con marcador, los puntos provisionales del pronóstico.
-  // Se separa por fase para sumarlo al bucket correcto (Grupos vs Eliminación).
+  // Delta tentativo en vivo de la Polla 1: solo partidos de GRUPOS en vivo
+  // (la eliminación es la Polla 2 y se calcula aparte con predictions_bracket).
   let liveGruposDelta = 0
-  let liveElimDelta = 0
   for (const pred of groupPreds) {
     const m = pred.matches
-    if (!m || m.estado !== 'live' || m.goles_local === null || m.goles_visitante === null) continue
+    if (!m || m.fase !== 'grupos' || m.estado !== 'live' || m.goles_local === null || m.goles_visitante === null) continue
     const pts = scoreGroupMatch(
       { predLocal: pred.pred_local, predVisitante: pred.pred_visitante },
       { golesLocal: m.goles_local, golesVisitante: m.goles_visitante },
     ).total
-    if (pts <= 0) continue
-    if (m.fase === 'grupos') liveGruposDelta += pts
-    else liveElimDelta += pts
+    if (pts > 0) liveGruposDelta += pts
   }
-
-  // Total tentativo en vivo: partidos (grupos + eliminación) + clasificados provisionales.
-  const liveTentativeTotal = liveGruposDelta + liveElimDelta + totalQualifyTentative
 
   // Total de la Polla 1 (grupos + clasificados + semis + preguntas). NO incluye la
   // eliminación: eso es la Polla 2 (cuadro), que va aparte en su propia pestaña.
