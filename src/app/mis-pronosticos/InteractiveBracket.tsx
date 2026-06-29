@@ -268,7 +268,17 @@ function SlotCard({
   const localName = localId ? teamsById.get(localId)?.nombre ?? '—' : null
   const visitanteName = visitanteId ? teamsById.get(visitanteId)?.nombre ?? '—' : null
   const bothKnown = !!localId && !!visitanteId
-  const advancerId = pick?.advancer && (pick.advancer === localId || pick.advancer === visitanteId) ? pick.advancer : null
+
+  // El que avanza se DERIVA del marcador: el que gana avanza automáticamente.
+  // Solo si el marcador es empate se pregunta explícitamente quién pasa.
+  const pl = pick?.local && pick.local !== '' ? parseInt(pick.local, 10) : null
+  const pv = pick?.visitante && pick.visitante !== '' ? parseInt(pick.visitante, 10) : null
+  const bothFilled = pl !== null && pv !== null
+  const isTie = bothFilled && pl === pv
+  const derivedWinner = !bothFilled ? null : pl! > pv! ? localId : pv! > pl! ? visitanteId : null
+  // El advancer guardado solo importa para desempates.
+  const tiePick = pick?.advancer && (pick.advancer === localId || pick.advancer === visitanteId) ? pick.advancer : null
+  const advancerId = isTie ? tiePick : derivedWinner
 
   const finished = real?.estado === 'finished'
   const live = real?.estado === 'live'
@@ -289,11 +299,11 @@ function SlotCard({
     if (r.ok) { setStatus('saved'); setMsg('Guardado ✓') }
     else { setStatus('error'); setMsg(r.error ?? 'Error') }
   }
-  // Tocar un equipo = marcarlo como que avanza (selección local; se persiste con Guardar).
-  function pickWinner(teamId: string) {
+  // Solo se usa para desempates: en empate el usuario elige quién pasa.
+  function pickTie(teamId: string) {
     if (!editable) return
     onPick(slot, { advancer: teamId })
-    setStatus('idle'); setMsg('') // edición sin guardar → limpia el "Guardado ✓"
+    setStatus('idle'); setMsg('')
   }
   function setScore(side: 'local' | 'visitante', v: string) {
     const clean = v.replace(/[^0-9]/g, '').slice(0, 2) // 0–99
@@ -318,13 +328,30 @@ function SlotCard({
           <TeamRow
             name={localName!} selected={advancerId === localId} editable={editable}
             score={pick?.local ?? ''} result={hasResult ? real!.golesLocal : null}
-            onPick={() => pickWinner(localId!)} onScore={(v) => setScore('local', v)}
+            onScore={(v) => setScore('local', v)}
           />
           <TeamRow
             name={visitanteName!} selected={advancerId === visitanteId} editable={editable}
             score={pick?.visitante ?? ''} result={hasResult ? real!.golesVisitante : null}
-            onPick={() => pickWinner(visitanteId!)} onScore={(v) => setScore('visitante', v)}
+            onScore={(v) => setScore('visitante', v)}
           />
+          {editable && isTie && (
+            <div className="flex items-center flex-wrap gap-1.5 pt-0.5">
+              <span className="text-[10px] text-[#f0a35e] font-semibold shrink-0">Empate — ¿quién pasa?</span>
+              <button
+                onClick={() => pickTie(localId!)}
+                className={`text-[10px] font-semibold px-2 py-1 rounded transition-colors ${
+                  advancerId === localId ? 'bg-[#9EE637] text-[#0d1117]' : 'bg-[#161b22] border border-[#30363d] text-[#e6edf3]'
+                }`}
+              >{localName}</button>
+              <button
+                onClick={() => pickTie(visitanteId!)}
+                className={`text-[10px] font-semibold px-2 py-1 rounded transition-colors ${
+                  advancerId === visitanteId ? 'bg-[#9EE637] text-[#0d1117]' : 'bg-[#161b22] border border-[#30363d] text-[#e6edf3]'
+                }`}
+              >{visitanteName}</button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="text-center text-xs text-[#768390] py-2">Equipos por definir</div>
@@ -364,25 +391,20 @@ function SlotCard({
 }
 
 function TeamRow({
-  name, selected, editable, score, result, onPick, onScore,
+  name, selected, editable, score, result, onScore,
 }: {
   name: string; selected: boolean; editable: boolean; score: string
-  result: number | null; onPick: () => void; onScore: (v: string) => void
+  result: number | null; onScore: (v: string) => void
 }) {
   return (
     <div className={`flex items-center gap-2 rounded-md border px-2 py-1.5 transition-colors ${
       selected ? 'border-[#9EE637] bg-[#9EE637]/10' : 'border-[#30363d] bg-[#161b22]'
     }`}>
-      <button
-        onClick={onPick}
-        disabled={!editable}
-        className={`flex items-center gap-2 min-w-0 flex-1 text-left ${editable ? '' : 'cursor-default'}`}
-        title={editable ? 'Toca para marcar que avanza' : undefined}
-      >
+      <div className="flex items-center gap-2 min-w-0 flex-1">
         <TeamFlag nombre={name} size={18} />
         <span className={`text-sm font-semibold truncate ${selected ? 'text-[#9EE637]' : 'text-[#e6edf3]'}`}>{name}</span>
         {selected && <span className="text-[#9EE637] text-xs shrink-0">✓ avanza</span>}
-      </button>
+      </div>
       {editable ? (
         <input
           type="number" min={0} max={99} inputMode="numeric"
