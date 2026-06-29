@@ -12,6 +12,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { mapTsdbStatus, tsdbTeamToDb, teamPairKey, orientScores } from '@/config/theSportsDbMap'
 import { syncQualifyFromResults } from '@/lib/autoQualify'
+import { advanceBracket } from '@/lib/advanceBracket'
 
 const LEAGUE_ID  = process.env.WORLDCUP_LEAGUE_ID ?? '4429'
 const BASE_URL   = 'https://www.thesportsdb.com/api/v2/json'
@@ -272,6 +273,10 @@ export async function syncSchedule(): Promise<SyncResult> {
     // syncSchedule corre poco (1×/día + botón manual en /admin): reconciliar
     // siempre los clasificados oficiales hace de backfill de grupos ya cerrados.
     const qualifyChanged = await reconcileQualifiers(db, result)
+    // Avanzar la llave oficial si terminó algún partido de eliminación
+    if (anyNewlyFinished) {
+      try { await advanceBracket(db) } catch (e) { result.errors.push(`advanceBracket: ${String(e)}`) }
+    }
     if (anyNewlyFinished || qualifyChanged) triggerRecalc()
 
   } catch (err) {
@@ -372,6 +377,7 @@ export async function syncLive(): Promise<SyncResult> {
     // syncLive corre cada minuto: solo reconciliar cuando algo recién finalizó.
     if (anyNewlyFinished) {
       await reconcileQualifiers(db, result)
+      try { await advanceBracket(db) } catch (e) { result.errors.push(`advanceBracket: ${String(e)}`) }
       triggerRecalc()
     }
 

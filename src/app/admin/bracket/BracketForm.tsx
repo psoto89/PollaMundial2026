@@ -214,10 +214,10 @@ function SeedR32() {
       const res = await fetch('/api/admin/bracket/seed', { method: 'POST' })
       const data = await res.json()
       if (res.ok) {
-        setMsg(`✅ ${data.created} creados · ${data.skipped} ya existían${data.missing?.length ? ` · ${data.missing.length} sin equipos aún` : ''}`)
+        setMsg(`✅ ${data.created} cruces oficiales cargados${data.canadaClosed ? ' · Sudáfrica–Canadá cerrado (Canadá 1-0)' : ''}`)
         router.refresh()
       } else {
-        setMsg(`❌ ${data.error ?? 'Error'}`)
+        setMsg(`❌ ${data.error ?? 'Error'}${data.unmatched ? `: ${data.unmatched.join(', ')}` : ''}`)
       }
     } catch {
       setMsg('❌ Error de red')
