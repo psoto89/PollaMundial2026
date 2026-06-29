@@ -73,8 +73,8 @@ export default function LoginPage() {
     <div className="max-w-md mx-auto py-12">
       <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight mb-2">Crea tu cuenta o entra</h1>
       <p className="text-sm text-[#768390] mb-6">
-        Escribe tu correo y te enviamos un enlace + un código — sin contraseña. Si es tu primera vez,
-        tu cuenta se crea automáticamente.
+        Escribe tu correo y te enviamos un <strong className="text-[#e6edf3]">código de 6 dígitos</strong> — sin contraseña.
+        Si es tu primera vez, tu cuenta se crea automáticamente.
       </p>
 
       {status === 'sent' || status === 'verifying' || (status === 'error' && code) ? (
@@ -83,8 +83,8 @@ export default function LoginPage() {
             <p className="text-3xl mb-3">📬</p>
             <p className="text-[#e6edf3] font-medium">Revisa tu correo</p>
             <p className="text-sm text-[#768390] mt-1">
-              Te enviamos un mensaje a <span className="text-[#e6edf3]">{email}</span>.
-              Toca el botón del correo <strong className="text-[#e6edf3]">o</strong> escribe aquí el código de 6 dígitos.
+              Te enviamos un código a <span className="text-[#e6edf3]">{email}</span>.
+              Escribe aquí los <strong className="text-[#e6edf3]">6 dígitos</strong> que te llegaron.
             </p>
           </div>
 
@@ -130,7 +130,7 @@ export default function LoginPage() {
             disabled={status === 'sending'}
             className="w-full px-4 py-3 rounded-lg bg-[#9EE637] text-[#0d1117] font-semibold disabled:opacity-50 transition-opacity"
           >
-            {status === 'sending' ? 'Enviando…' : 'Enviar enlace y código'}
+            {status === 'sending' ? 'Enviando…' : 'Enviar código'}
           </button>
           {status === 'error' && <p className="text-sm text-[#f85149]">{errorMsg}</p>}
           <p className="text-xs text-[#768390]">
