@@ -80,7 +80,7 @@ export default function LoginPage() {
     <div className="max-w-md mx-auto py-12">
       <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight mb-2">Crea tu cuenta o entra</h1>
       <p className="text-sm text-[#768390] mb-6">
-        Escribe tu correo y te enviamos un <strong className="text-[#e6edf3]">código de 6 dígitos</strong> — sin contraseña.
+        Escribe tu correo y te enviamos un <strong className="text-[#e6edf3]">código</strong> — sin contraseña.
         Si es tu primera vez, tu cuenta se crea automáticamente.
       </p>
 
@@ -91,18 +91,18 @@ export default function LoginPage() {
             <p className="text-[#e6edf3] font-medium">Revisa tu correo</p>
             <p className="text-sm text-[#768390] mt-1">
               Te enviamos un código a <span className="text-[#e6edf3]">{email}</span>.
-              Escribe aquí los <strong className="text-[#e6edf3]">6 dígitos</strong> que te llegaron.
+              Escribe aquí <strong className="text-[#e6edf3]">el código</strong> que te llegó.
             </p>
           </div>
 
           <form onSubmit={verifyCode} className="space-y-3">
             <input
               type="text" inputMode="numeric" autoComplete="one-time-code"
-              maxLength={6}
+              maxLength={8}
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="123456"
-              className="w-full px-4 py-3 rounded-lg bg-[#0d1117] border border-[#30363d] text-[#e6edf3] text-center text-2xl tracking-[0.5em] font-bold placeholder-[#444d56] focus:outline-none focus:border-[#9EE637]"
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+              placeholder="••••••"
+              className="w-full px-4 py-3 rounded-lg bg-[#0d1117] border border-[#30363d] text-[#e6edf3] text-center text-2xl tracking-[0.4em] font-bold placeholder-[#444d56] focus:outline-none focus:border-[#9EE637]"
             />
             <button
               type="submit"
