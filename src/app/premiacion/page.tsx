@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getBracketMemberIds, isGruposMember } from '@/lib/pollaMembers'
+import { POLLA2_PUBLIC } from '@/config/features'
 
 export const revalidate = 60
 
@@ -105,15 +106,17 @@ export default async function PremiacionPage() {
         premios={premiosP1}
       />
 
-      <PollaPrizes
-        accent="#58a6ff"
-        emoji="🏆"
-        titulo="Polla 2 · Cuadro Eliminatorio"
-        numParticipantes={p2.length}
-        apuesta={APUESTA_POLLA2}
-        pozo={pozoP2}
-        premios={premiosP2}
-      />
+      {POLLA2_PUBLIC && (
+        <PollaPrizes
+          accent="#58a6ff"
+          emoji="🏆"
+          titulo="Polla 2 · Cuadro Eliminatorio"
+          numParticipantes={p2.length}
+          apuesta={APUESTA_POLLA2}
+          pozo={pozoP2}
+          premios={premiosP2}
+        />
+      )}
 
       <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 text-sm text-[#768390]">
         <p>

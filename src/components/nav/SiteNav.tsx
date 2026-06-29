@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { POLLA2_PUBLIC } from '@/config/features'
 
 const LiveLink = ({ onClick }: { onClick?: () => void }) => (
   <Link
@@ -49,9 +50,11 @@ export default function SiteNav() {
       <Link href="/grupos" onClick={onClick} className="text-[#768390] hover:text-[#e6edf3] transition-colors">
         Polla 1
       </Link>
-      <Link href="/eliminacion" onClick={onClick} className="text-[#768390] hover:text-[#e6edf3] transition-colors">
-        Polla 2
-      </Link>
+      {POLLA2_PUBLIC && (
+        <Link href="/eliminacion" onClick={onClick} className="text-[#768390] hover:text-[#e6edf3] transition-colors">
+          Polla 2
+        </Link>
+      )}
       <Link href="/reglas" onClick={onClick} className="text-[#768390] hover:text-[#e6edf3] transition-colors">
         Reglas
       </Link>
@@ -60,9 +63,11 @@ export default function SiteNav() {
       </Link>
       {authed === null ? null : authed ? (
         <>
-          <Link href="/mis-pronosticos" onClick={onClick} className="text-[#9EE637] font-medium hover:underline">
-            Mi Polla
-          </Link>
+          {POLLA2_PUBLIC && (
+            <Link href="/mis-pronosticos" onClick={onClick} className="text-[#9EE637] font-medium hover:underline">
+              Mi Polla
+            </Link>
+          )}
           <button onClick={() => { onClick?.(); logout() }} className="text-left text-[#768390] hover:text-[#e6edf3] transition-colors">
             Salir
           </button>

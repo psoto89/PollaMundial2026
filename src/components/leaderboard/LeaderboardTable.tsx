@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { scoreGroupMatch, scoreQualify, type QualifyPred, type QualifyOfficial } from '@/lib/scoring'
 import { computeGroupStandings } from '@/lib/standings'
+import { POLLA2_PUBLIC } from '@/config/features'
 
 export type LeaderboardScope = 'general' | 'grupos' | 'eliminacion'
 
@@ -97,6 +98,14 @@ function filterByScope(rows: ScoreRow[], scope: LeaderboardScope, memberSet: Set
     return rows.filter((r) => {
       const alias = r.participants?.sheet_alias
       return !!alias && !alias.startsWith('auth:')
+    })
+  }
+  // General: todos. Pero mientras la Polla 2 está oculta, no exponer las cuentas
+  // self-service de prueba (sheet_alias 'auth:%').
+  if (!POLLA2_PUBLIC) {
+    return rows.filter((r) => {
+      const alias = r.participants?.sheet_alias
+      return !alias || !alias.startsWith('auth:')
     })
   }
   return rows

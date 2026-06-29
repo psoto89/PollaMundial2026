@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { POLLA2_PUBLIC } from '@/config/features'
 
 export const metadata = {
   title: 'Reglas — Polla Mundial 2026',
@@ -119,6 +120,7 @@ export default function ReglasPage() {
         ))}
       </Section>
 
+      {POLLA2_PUBLIC && (<>
       <PollaBanner
         accent="#58a6ff"
         emoji="🏆"
@@ -171,6 +173,7 @@ export default function ReglasPage() {
           antes de su inicio (hora de Colombia). Los partidos ya jugados al activar la polla no participan.
         </div>
       </Section>
+      </>)}
 
       {/* Resumen de puntos máximos */}
       <div className="bg-[#161b22] border border-[#9EE637]/20 rounded-xl p-4">
@@ -194,6 +197,7 @@ export default function ReglasPage() {
           </div>
         </div>
 
+        {POLLA2_PUBLIC && (<>
         <p className="text-xs text-[#768390] mb-2 mt-5">Polla 2 (cuadro eliminatorio)</p>
         <div className="space-y-1.5">
           {[
@@ -210,6 +214,7 @@ export default function ReglasPage() {
             <span className="text-[#9EE637] text-base">326 pts</span>
           </div>
         </div>
+        </>)}
       </div>
     </div>
   )

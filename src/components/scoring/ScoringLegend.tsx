@@ -4,6 +4,8 @@
  * Los valores reflejan src/lib/scoring.ts — mantener sincronizado si cambian.
  */
 
+import { POLLA2_PUBLIC } from '@/config/features'
+
 interface Rule {
   label: string
   pts: string
@@ -72,7 +74,7 @@ export default function ScoringLegend() {
         <span className="text-xs text-[#768390] ml-auto group-open:rotate-90 transition-transform">▸</span>
       </summary>
       <div className="px-4 pb-4 pt-1 space-y-4 border-t border-[#21262d]">
-        {SECTIONS.map((section) => (
+        {SECTIONS.filter((s) => POLLA2_PUBLIC || !s.titulo.startsWith('Polla 2')).map((section) => (
           <div key={section.titulo}>
             <p className="text-xs font-semibold text-[#768390] uppercase tracking-wide mt-3 mb-1.5">
               {section.titulo}
