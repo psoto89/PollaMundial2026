@@ -61,3 +61,52 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: String(error) }, { status: 500 })
   }
 }
+
+/**
+ * DELETE /api/admin/cuentas
+ * Borra por completo un participante (cuenta + picks + score + usuario de Auth).
+ * Body: { email } o { participantId }. Útil para limpiar cuentas de prueba.
+ */
+const delSchema = z.object({
+  email: z.string().email().optional(),
+  participantId: z.string().uuid().optional(),
+}).refine((d) => d.email || d.participantId, { message: 'email o participantId requerido' })
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const isAdmin = await verifyAdminSession()
+    if (!isAdmin) return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
+
+    const parsed = delSchema.safeParse(await req.json())
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
+    }
+    const db = createAdminClient()
+
+    // Resolver participant_id + auth_user_id desde la cuenta
+    const q = db.from('participant_accounts').select('participant_id, auth_user_id, email')
+    const { data: acc } = parsed.data.participantId
+      ? await q.eq('participant_id', parsed.data.participantId).maybeSingle()
+      : await q.ilike('email', parsed.data.email!).maybeSingle()
+
+    const participantId = acc?.participant_id ?? parsed.data.participantId
+    if (!participantId) {
+      return NextResponse.json({ error: 'No se encontró la cuenta' }, { status: 404 })
+    }
+
+    // Borrar dependencias y el participante (FK on delete cascade cubre el resto)
+    await db.from('scores_cache').delete().eq('participant_id', participantId)
+    await db.from('predictions_bracket').delete().eq('participant_id', participantId)
+    await db.from('participants').delete().eq('id', participantId)
+
+    // Borrar el usuario de Supabase Auth para que no se re-cree por auto-join
+    if (acc?.auth_user_id) {
+      try { await db.auth.admin.deleteUser(acc.auth_user_id) } catch (e) { console.error('[DELETE cuentas] auth', e) }
+    }
+
+    return NextResponse.json({ ok: true, deleted: participantId, email: acc?.email ?? null })
+  } catch (error) {
+    console.error('[DELETE /api/admin/cuentas]', error)
+    return NextResponse.json({ error: String(error) }, { status: 500 })
+  }
+}

@@ -23,6 +23,8 @@ export default async function EliminacionPage() {
   const { scores, liveMatches, livePreds, groupMatches, teams, qualifyPreds } = await loadLeaderboardData()
   // Solo los que entraron por invitación a la Polla 2 (tienen picks de bracket)
   const memberIds = await getBracketMemberIds()
+  // ¿Hay sesión? El CTA cambia: logueado → "ir a mi cuadro"; sin sesión → "únete con tu correo"
+  const { data: { user } } = await supabase.auth.getUser()
 
   const { data: elimRaw } = await supabase
     .from('matches')
@@ -60,14 +62,18 @@ export default async function EliminacionPage() {
       />
 
       <Link
-        href="/polla/eliminacion-2026"
+        href={user ? '/mis-pronosticos' : '/polla/eliminacion-2026'}
         className="block text-center bg-[#9EE637] rounded-xl p-4 hover:opacity-90 transition-opacity"
       >
-        <span className="text-sm font-bold text-[#0d1117]">🎯 Únete con tu correo y arma tu cuadro →</span>
+        <span className="text-sm font-bold text-[#0d1117]">
+          {user ? '🎯 Ir a mi cuadro →' : '🎯 Únete con tu correo y arma tu cuadro →'}
+        </span>
       </Link>
-      <p className="text-center text-xs text-[#768390] -mt-3">
-        Si no tienes cuenta, te pedimos tu correo y te llega un enlace mágico para entrar.
-      </p>
+      {!user && (
+        <p className="text-center text-xs text-[#768390] -mt-3">
+          Si no tienes cuenta, te pedimos tu correo y te llega un enlace mágico para entrar.
+        </p>
+      )}
 
       {elim.length > 0 && (
         <div>
