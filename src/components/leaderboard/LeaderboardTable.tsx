@@ -78,6 +78,28 @@ interface Props {
   groupMatches?: GroupMatchLite[]
   teams?: TeamLite[]
   qualifyPreds?: QualifyPredLite[]
+  /** Solo para scope 'eliminacion': ids de los miembros de la Polla 2 (entraron por invitación). */
+  memberIds?: string[]
+}
+
+/**
+ * Filtra las filas según la polla:
+ *  - eliminacion: solo miembros de la Polla 2 (los que entraron por invitación y juegan el cuadro).
+ *  - grupos: solo el roster original (no cuentas self-service 'auth:%').
+ *  - general: todos.
+ */
+function filterByScope(rows: ScoreRow[], scope: LeaderboardScope, memberSet: Set<string> | null): ScoreRow[] {
+  if (scope === 'eliminacion') {
+    if (!memberSet) return rows
+    return rows.filter((r) => memberSet.has(r.participant_id))
+  }
+  if (scope === 'grupos') {
+    return rows.filter((r) => {
+      const alias = r.participants?.sheet_alias
+      return !!alias && !alias.startsWith('auth:')
+    })
+  }
+  return rows
 }
 
 // Mapeo fase real → bucket de ronda (para tentativo en vivo y chips)
@@ -158,8 +180,10 @@ export default function LeaderboardTable({
   groupMatches = [],
   teams = [],
   qualifyPreds = [],
+  memberIds,
 }: Props) {
-  const [scores, setScores] = useState<ScoreRow[]>(initialScores)
+  const memberSet = useMemo(() => (memberIds ? new Set(memberIds) : null), [memberIds])
+  const [scores, setScores] = useState<ScoreRow[]>(() => filterByScope(initialScores, scope, memberIds ? new Set(memberIds) : null))
   const [liveMatches, setLiveMatches] = useState<LiveMatchLite[]>(initialLiveMatches)
   const [livePreds, setLivePreds] = useState<LivePred[]>(initialLivePreds)
   const prevRanks = useRef<Map<string, number>>(new Map())
@@ -305,7 +329,7 @@ export default function LeaderboardTable({
         .from('scores_cache')
         .select('*, participants(id, nombre, sheet_alias, avatar_url)')
         .order('total', { ascending: false })
-      if (data) setScores(data as unknown as ScoreRow[])
+      if (data) setScores(filterByScope(data as unknown as ScoreRow[], scope, memberSet))
     }
 
     async function refetchLive() {
@@ -349,13 +373,17 @@ export default function LeaderboardTable({
       supabase.removeChannel(channel)
       clearInterval(interval)
     }
-  }, [])
+  }, [scope, memberSet])
 
   if (scores.length === 0) {
     return (
       <div className="text-center py-16 text-[#768390]">
         <p className="text-4xl mb-3">⚽</p>
-        <p>Sin datos aún. El admin debe importar los pronósticos.</p>
+        <p>
+          {scope === 'eliminacion'
+            ? 'Aún nadie se ha unido al cuadro. Comparte el link de invitación para empezar.'
+            : 'Sin datos aún. El admin debe importar los pronósticos.'}
+        </p>
       </div>
     )
   }

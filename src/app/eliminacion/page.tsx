@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import LeaderboardTable from '@/components/leaderboard/LeaderboardTable'
 import TeamFlag from '@/components/ui/TeamFlag'
 import { loadLeaderboardData } from '@/lib/leaderboardData'
+import { getBracketMemberIds } from '@/lib/pollaMembers'
 import { ROUND_LABELS, type RoundKey } from '@/config/bracket2026'
 import Link from 'next/link'
 
@@ -20,6 +21,8 @@ interface ElimRow {
 export default async function EliminacionPage() {
   const supabase = await createClient()
   const { scores, liveMatches, livePreds, groupMatches, teams, qualifyPreds } = await loadLeaderboardData()
+  // Solo los que entraron por invitación a la Polla 2 (tienen picks de bracket)
+  const memberIds = await getBracketMemberIds()
 
   const { data: elimRaw } = await supabase
     .from('matches')
@@ -53,6 +56,7 @@ export default async function EliminacionPage() {
         groupMatches={groupMatches}
         teams={teams}
         qualifyPreds={qualifyPreds}
+        memberIds={memberIds}
       />
 
       <Link

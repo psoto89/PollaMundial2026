@@ -4,6 +4,7 @@ import Link from 'next/link'
 import InteractiveBracket, {
   type TeamRef, type RealSlot, type MyPick,
 } from './InteractiveBracket'
+import { getBracketMemberIds } from '@/lib/pollaMembers'
 
 export const revalidate = 0
 
@@ -57,7 +58,10 @@ export default async function MisPronosticosPage() {
     participant_id: string; total: number; total_grupos: number; total_eliminacion: number
     total_bono_octavos: number; total_bono_cuartos: number; total_bono_semis: number; total_bono_finales: number
   }
-  const scoresList = (allScores ?? []) as ScoreRow[]
+  // Ranking solo entre miembros de la Polla 2 (entraron por invitación) + yo
+  const memberIds = new Set(await getBracketMemberIds())
+  memberIds.add(participantId)
+  const scoresList = ((allScores ?? []) as ScoreRow[]).filter((s) => memberIds.has(s.participant_id))
   const myRankIdx = scoresList.findIndex((s) => s.participant_id === participantId)
   const myScore = myRankIdx >= 0 ? scoresList[myRankIdx] : null
   const posicion = myRankIdx >= 0 ? myRankIdx + 1 : null

@@ -12,8 +12,15 @@ export default function ReglasPage() {
           ← Tabla general
         </Link>
         <h1 className="text-2xl font-bold text-[#e6edf3]">Reglas de puntaje</h1>
-        <p className="text-sm text-[#768390] mt-1">Gran Polla Mundial 2026</p>
+        <p className="text-sm text-[#768390] mt-1">Gran Polla Mundial 2026 · dos pollas independientes</p>
       </div>
+
+      <PollaBanner
+        accent="#9EE637"
+        emoji="⚽"
+        titulo="Polla 1 · Fase de Grupos"
+        desc="Marcadores de los 72 partidos + clasificados, puestos finales y preguntas."
+      />
 
       {/* 1. Partidos de grupos */}
       <Section
@@ -112,11 +119,18 @@ export default function ReglasPage() {
         ))}
       </Section>
 
+      <PollaBanner
+        accent="#58a6ff"
+        emoji="🏆"
+        titulo="Polla 2 · Cuadro Eliminatorio"
+        desc="Polla aparte: entras por link de invitación. Arma tu bracket y suma por partido + bonos."
+      />
+
       {/* 5. Polla 2 · Cuadro eliminatorio */}
       <Section
         num="5"
-        title="Polla 2 · Cuadro eliminatorio"
-        subtitle="Arma tu bracket: marcador de 90′ + quién avanza, de 16avos a la Final"
+        title="Cómo se puntúa el cuadro"
+        subtitle="Marcador de 90′ + quién avanza, de 16avos a la Final"
       >
         <p className="text-xs font-semibold text-[#768390] uppercase tracking-wider mb-1">Por partido</p>
         <RuleRow
@@ -202,6 +216,28 @@ export default function ReglasPage() {
 }
 
 // ─── Componentes internos ─────────────────────────────────────
+
+function PollaBanner({
+  accent, emoji, titulo, desc,
+}: {
+  accent: string
+  emoji: string
+  titulo: string
+  desc: string
+}) {
+  return (
+    <div
+      className="rounded-xl border p-4 mt-2"
+      style={{ borderColor: `${accent}55`, background: `${accent}0d` }}
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-xl">{emoji}</span>
+        <h2 className="text-lg font-bold" style={{ color: accent }}>{titulo}</h2>
+      </div>
+      <p className="text-xs text-[#768390] mt-1">{desc}</p>
+    </div>
+  )
+}
 
 function Section({
   num, title, subtitle, children,
