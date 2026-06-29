@@ -13,6 +13,7 @@ interface LiveMatch {
   goles_visitante: number | null
   minuto: number | null
   estado: string
+  bracket_slot?: string | null
   equipo_local: { id: string; nombre: string } | null
   equipo_visitante: { id: string; nombre: string } | null
 }
@@ -63,23 +64,49 @@ export default function LiveView({ initialMatches, initialPreds, participants, u
       const { data: liveMatches } = await supabase
         .from('matches')
         .select(`
-          id, grupo, match_index, goles_local, goles_visitante, minuto, estado,
+          id, grupo, match_index, goles_local, goles_visitante, minuto, estado, bracket_slot,
           equipo_local:teams!equipo_local_id(id, nombre),
           equipo_visitante:teams!equipo_visitante_id(id, nombre)
         `)
         .eq('estado', 'live')
       if (liveMatches) {
-        setMatches(liveMatches as unknown as LiveMatch[])
-        const ids = (liveMatches as { id: string }[]).map((m) => m.id)
-        if (ids.length > 0) {
-          const { data: newPreds } = await supabase
-            .from('predictions_group')
-            .select('participant_id, match_id, pred_local, pred_visitante, participants(id, nombre)')
-            .in('match_id', ids)
-          if (newPreds) setPreds(newPreds as unknown as Pred[])
-        } else {
-          setPreds([])
-        }
+        const lm = liveMatches as unknown as LiveMatch[]
+        setMatches(lm)
+        const ids = lm.map((m) => m.id)
+        if (ids.length === 0) { setPreds([]); return }
+
+        const { data: groupPreds } = await supabase
+          .from('predictions_group')
+          .select('participant_id, match_id, pred_local, pred_visitante, participants(id, nombre)')
+          .in('match_id', ids)
+
+        // Polla 2 (cuadro): pronósticos por slot → mapear al match_id en vivo
+        const slotToMatchId = new Map(
+          lm.filter((m) => m.bracket_slot).map((m) => [m.bracket_slot as string, m.id]),
+        )
+        const slots = [...slotToMatchId.keys()]
+        const { data: bracketPreds } = slots.length > 0
+          ? await supabase
+              .from('predictions_bracket')
+              .select('participant_id, slot, pred_local, pred_visitante, participants(id, nombre)')
+              .in('slot', slots)
+          : { data: [] }
+
+        const mappedBracket: Pred[] = ((bracketPreds ?? []) as unknown as {
+          participant_id: string; slot: string
+          pred_local: number | null; pred_visitante: number | null
+          participants: { id: string; nombre: string } | null
+        }[])
+          .filter((p) => p.pred_local !== null && p.pred_visitante !== null)
+          .map((p) => ({
+            participant_id: p.participant_id,
+            match_id: slotToMatchId.get(p.slot) as string,
+            pred_local: p.pred_local as number,
+            pred_visitante: p.pred_visitante as number,
+            participants: p.participants,
+          }))
+
+        setPreds([...((groupPreds ?? []) as unknown as Pred[]), ...mappedBracket])
       }
     }
 
@@ -272,7 +299,7 @@ function LiveMatchCard({ match, preds, allParticipants }: LiveMatchCardProps) {
             EN VIVO {match.minuto !== null ? `· ${match.minuto}'` : ''}
           </span>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-[#768390]">Grupo {match.grupo}</span>
+            <span className="text-xs text-[#768390]">{match.bracket_slot ? 'Eliminación' : `Grupo ${match.grupo}`}</span>
             <Link href={`/match/${match.id}`} className="text-xs text-[#9EE637] hover:underline">
               Ver pronósticos →
             </Link>
