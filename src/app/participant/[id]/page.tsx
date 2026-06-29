@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { scoreGroupMatch, scoreQualify, scoreSemis, scoreKnockoutMatch, answersMatch, type QualifyOfficial } from '@/lib/scoring'
 import { computeGroupStandings } from '@/lib/standings'
 import { ROUND_LABELS, ROUND_ORDER, type RoundKey } from '@/config/bracket2026'
+import PollaTabs from './PollaTabs'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Puesto, PreguntaKey } from '@/types'
@@ -374,6 +375,64 @@ export default async function ParticipantPage({ params }: Props) {
   // Total tentativo en vivo: partidos (grupos + eliminación) + clasificados provisionales.
   const liveTentativeTotal = liveGruposDelta + liveElimDelta + totalQualifyTentative
 
+  // ─── Panel Polla 2 (cuadro), se muestra en su pestaña ──────────────────────
+  const polla2Panel = (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-semibold text-[#e6edf3]">🏆 Polla 2 · Cuadro</h2>
+        <span className="inline-flex items-center gap-2">
+          {bracketLiveDelta > 0 && (
+            <span className="text-xs font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">+{bracketLiveDelta} en vivo</span>
+          )}
+          {scores && (
+            <span className="text-sm font-bold text-[#9EE637]">
+              +{((scores.total_eliminacion as number) ?? 0)
+                + ((scores.total_bono_octavos as number) ?? 0)
+                + ((scores.total_bono_cuartos as number) ?? 0)
+                + ((scores.total_bono_semis as number) ?? 0)
+                + ((scores.total_bono_finales as number) ?? 0)} pts
+            </span>
+          )}
+        </span>
+      </div>
+      <p className="text-xs text-[#768390] mb-3">
+        Marcador final (incluye alargue) = +5 exacto · +2 signo · +2 si aciertas quién pasa · más bonos de cuadro
+      </p>
+      <div className="space-y-3">
+        {bracketRounds.map((round) => {
+          const rows = bracketByRound.get(round) ?? []
+          return (
+            <div key={round}>
+              <p className="text-xs font-semibold text-[#768390] uppercase tracking-wider mb-1.5">{ROUND_LABELS[round]}</p>
+              <div className="divide-y divide-[#21262d] bg-[#161b22] border border-[#30363d] rounded-lg overflow-hidden">
+                {rows.map((r) => (
+                  <div key={r.slot} className={`flex items-center gap-2 px-3 py-2 text-sm ${(r.pts ?? 0) > 0 ? 'bg-[#9EE637]/5' : ''}`}>
+                    <span className="flex-1 min-w-0 truncate text-[#e6edf3]">
+                      {r.localName} <span className="text-[#9EE637] font-mono">{r.predLocal ?? '–'}–{r.predVisitante ?? '–'}</span> {r.visitanteName}
+                    </span>
+                    {r.advancerName && (
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                        r.acertoAdvancer ? 'bg-[#9EE637]/20 text-[#9EE637]' : 'bg-[#21262d] text-[#768390]'
+                      }`}>
+                        {r.acertoAdvancer ? '✓ ' : ''}pasa {r.advancerName}
+                      </span>
+                    )}
+                    {(r.finished || r.live) && (
+                      <span className="text-xs text-[#768390] shrink-0 font-mono">{r.golesLocal ?? '–'}–{r.golesVisitante ?? '–'}</span>
+                    )}
+                    <span className={`text-xs font-bold tabular-nums shrink-0 w-8 text-right ${(r.pts ?? 0) > 0 ? 'text-[#9EE637]' : 'text-[#444d56]'}`}>
+                      {r.pts !== null ? (r.pts > 0 ? `+${r.pts}` : '—') : '?'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -384,6 +443,11 @@ export default async function ParticipantPage({ params }: Props) {
         <h1 className="text-2xl font-bold text-[#e6edf3]">{participant.nombre}</h1>
       </div>
 
+      <PollaTabs
+        hasBracket={bracketRounds.length > 0}
+        polla2={polla2Panel}
+        polla1={
+          <div className="space-y-8">
       {/* Resumen de puntos */}
       {scores && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -409,64 +473,6 @@ export default async function ParticipantPage({ params }: Props) {
               )}
             </div>
           ))}
-        </div>
-      )}
-
-      {/* Polla 2 · Cuadro eliminatorio */}
-      {bracketRounds.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-[#e6edf3]">🏆 Polla 2 · Cuadro</h2>
-            <span className="inline-flex items-center gap-2">
-              {bracketLiveDelta > 0 && (
-                <span className="text-xs font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">+{bracketLiveDelta} en vivo</span>
-              )}
-              {scores && (
-                <span className="text-sm font-bold text-[#9EE637]">
-                  +{((scores.total_eliminacion as number) ?? 0)
-                    + ((scores.total_bono_octavos as number) ?? 0)
-                    + ((scores.total_bono_cuartos as number) ?? 0)
-                    + ((scores.total_bono_semis as number) ?? 0)
-                    + ((scores.total_bono_finales as number) ?? 0)} pts
-                </span>
-              )}
-            </span>
-          </div>
-          <p className="text-xs text-[#768390] mb-3">
-            Marcador final (incluye alargue) = +5 exacto · +2 signo · +2 si aciertas quién pasa · más bonos de cuadro
-          </p>
-          <div className="space-y-3">
-            {bracketRounds.map((round) => {
-              const rows = bracketByRound.get(round) ?? []
-              return (
-                <div key={round}>
-                  <p className="text-xs font-semibold text-[#768390] uppercase tracking-wider mb-1.5">{ROUND_LABELS[round]}</p>
-                  <div className="divide-y divide-[#21262d] bg-[#161b22] border border-[#30363d] rounded-lg overflow-hidden">
-                    {rows.map((r) => (
-                      <div key={r.slot} className={`flex items-center gap-2 px-3 py-2 text-sm ${(r.pts ?? 0) > 0 ? 'bg-[#9EE637]/5' : ''}`}>
-                        <span className="flex-1 min-w-0 truncate text-[#e6edf3]">
-                          {r.localName} <span className="text-[#9EE637] font-mono">{r.predLocal ?? '–'}–{r.predVisitante ?? '–'}</span> {r.visitanteName}
-                        </span>
-                        {r.advancerName && (
-                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
-                            r.acertoAdvancer ? 'bg-[#9EE637]/20 text-[#9EE637]' : 'bg-[#21262d] text-[#768390]'
-                          }`}>
-                            {r.acertoAdvancer ? '✓ ' : ''}pasa {r.advancerName}
-                          </span>
-                        )}
-                        {(r.finished || r.live) && (
-                          <span className="text-xs text-[#768390] shrink-0 font-mono">{r.golesLocal ?? '–'}–{r.golesVisitante ?? '–'}</span>
-                        )}
-                        <span className={`text-xs font-bold tabular-nums shrink-0 w-8 text-right ${(r.pts ?? 0) > 0 ? 'text-[#9EE637]' : 'text-[#444d56]'}`}>
-                          {r.pts !== null ? (r.pts > 0 ? `+${r.pts}` : '—') : '?'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
         </div>
       )}
 
@@ -714,6 +720,9 @@ export default async function ParticipantPage({ params }: Props) {
           })}
         </div>
       </div>
+          </div>
+        }
+      />
     </div>
   )
 }
