@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { verifyAdminSession } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncQualifyFromResults } from '@/lib/autoQualify'
+import { advanceBracket } from '@/lib/advanceBracket'
 
 // ─── Schemas individuales ─────────────────────────────────────
 const matchResultSchema = z.object({
@@ -101,6 +102,13 @@ async function handleMatchResult(
       await syncQualifyFromResults(db)
     } catch (e) {
       console.error('[handleMatchResult] auto-qualify falló (no bloqueante)', e)
+    }
+
+    // Avanzar la llave oficial: crea la siguiente ronda si ya hay ganadores
+    try {
+      await advanceBracket(db)
+    } catch (e) {
+      console.error('[handleMatchResult] advanceBracket falló (no bloqueante)', e)
     }
 
     // 2) Recalc COMPLETO siempre (grupos + eliminación + clasificados + semis +
