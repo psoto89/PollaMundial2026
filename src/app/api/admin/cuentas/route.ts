@@ -15,17 +15,84 @@ const schema = z.object({
   authUserId: z.string().uuid().optional(),
 })
 
+// Fusionar un participante self-service (Polla 2) dentro de uno del roster (Polla 1):
+// misma persona repetida. Mueve picks + cuenta (correo/auth) al roster y borra el duplicado.
+const mergeSchema = z.object({
+  mergeFrom: z.string().uuid(), // participante self-service (se elimina)
+  mergeTo: z.string().uuid(),   // participante del roster (se conserva)
+})
+
+async function handleMerge(
+  db: ReturnType<typeof createAdminClient>,
+  mergeFrom: string,
+  mergeTo: string,
+  req: NextRequest,
+) {
+  if (mergeFrom === mergeTo) {
+    return NextResponse.json({ error: 'No se puede fusionar consigo mismo' }, { status: 400 })
+  }
+  // Cuenta del self-service (correo + auth que se van a conservar)
+  const { data: fromAcc } = await db
+    .from('participant_accounts')
+    .select('email, auth_user_id')
+    .eq('participant_id', mergeFrom)
+    .maybeSingle()
+  if (!fromAcc) {
+    return NextResponse.json({ error: 'El usuario self-service no tiene cuenta' }, { status: 400 })
+  }
+
+  // Mover picks de bracket; los slots que el destino ya tenga, descartar los del origen
+  const { data: toSlots } = await db.from('predictions_bracket').select('slot').eq('participant_id', mergeTo)
+  const toSlotList = (toSlots ?? []).map((s) => (s as { slot: string }).slot)
+  if (toSlotList.length > 0) {
+    await db.from('predictions_bracket').delete().eq('participant_id', mergeFrom).in('slot', toSlotList)
+  }
+  await db.from('predictions_bracket').update({ participant_id: mergeTo }).eq('participant_id', mergeFrom)
+
+  // Reasignar la cuenta (correo + auth) al participante del roster, en limpio
+  await db.from('participant_accounts').delete().in('participant_id', [mergeFrom, mergeTo])
+  const { error: accErr } = await db.from('participant_accounts').insert({
+    participant_id: mergeTo,
+    email: fromAcc.email,
+    auth_user_id: fromAcc.auth_user_id,
+  })
+  if (accErr) {
+    return NextResponse.json({ error: `No se pudo fusionar la cuenta: ${accErr.message}` }, { status: 400 })
+  }
+
+  // Borrar el participante self-service (ya quedó vacío)
+  await db.from('scores_cache').delete().eq('participant_id', mergeFrom)
+  await db.from('participants').delete().eq('id', mergeFrom)
+
+  // Recalcular para que el participante fusionado quede con sus totales correctos
+  try {
+    await fetch(new URL('/api/admin/recalc', req.url), {
+      method: 'POST', headers: { 'x-internal-secret': process.env.ADMIN_SESSION_SECRET ?? '' },
+    })
+  } catch { /* no bloqueante */ }
+
+  return NextResponse.json({ ok: true, merged: mergeTo })
+}
+
 export async function POST(req: NextRequest) {
   try {
     const isAdmin = await verifyAdminSession()
     if (!isAdmin) return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
 
-    const parsed = schema.safeParse(await req.json())
+    const body = await req.json()
+    const db = createAdminClient()
+
+    // ¿Es una fusión (Polla 2 self-service → Polla 1 roster)?
+    const mergeParsed = mergeSchema.safeParse(body)
+    if (mergeParsed.success) {
+      return handleMerge(db, mergeParsed.data.mergeFrom, mergeParsed.data.mergeTo, req)
+    }
+
+    const parsed = schema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
     }
     const email = parsed.data.email.trim().toLowerCase()
-    const db = createAdminClient()
 
     // Vinculación manual de un self-signup: usa el authUserId entrante.
     // Pre-asignación clásica: conserva el auth_user_id que ya tuviera el participante.
