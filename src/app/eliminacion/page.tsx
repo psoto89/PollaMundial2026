@@ -39,8 +39,8 @@ export default async function EliminacionPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight">🏆 Polla 2 · Eliminación</h1>
-          <p className="text-sm text-[#768390] mt-1">Posiciones por marcadores de dieciseisavos a la final</p>
+          <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight">🏆 Polla 2 · Cuadro Eliminatorio</h1>
+          <p className="text-sm text-[#768390] mt-1">Marcador 90′ + quién avanza · bonos de cuadro · de 16avos a la final</p>
         </div>
         <Link href="/" className="text-xs text-[#768390] hover:text-[#9EE637]">← Inicio</Link>
       </div>

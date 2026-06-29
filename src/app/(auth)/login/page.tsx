@@ -4,17 +4,24 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
+// Destino tras el login: respeta ?next= (solo rutas internas) o el cuadro por defecto.
+function getNext(): string {
+  if (typeof window === 'undefined') return '/mis-pronosticos'
+  const next = new URLSearchParams(window.location.search).get('next')
+  return next && next.startsWith('/') ? next : '/mis-pronosticos'
+}
+
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
 
-  // Si ya hay sesión, no mostrar el login: ir directo a Mi Polla
+  // Si ya hay sesión, no mostrar el login: ir directo al destino (?next o el cuadro)
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) router.replace('/mis-pronosticos')
+      if (data.user) router.replace(getNext())
     })
   }, [router])
 
@@ -26,9 +33,10 @@ export default function LoginPage() {
 
     const supabase = createClient()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin
+    const redirectTo = `${appUrl}/auth/callback?next=${encodeURIComponent(getNext())}`
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { emailRedirectTo: `${appUrl}/auth/callback` },
+      options: { emailRedirectTo: redirectTo },
     })
 
     if (error) {
@@ -78,7 +86,7 @@ export default function LoginPage() {
           </button>
           {status === 'error' && <p className="text-sm text-[#f85149]">{errorMsg}</p>}
           <p className="text-xs text-[#768390]">
-            Tras entrar, el admin vinculará tu cuenta a tu participante de la polla.
+            Si entras por un link de invitación, tu cuenta se une a la polla automáticamente.
           </p>
         </form>
       )}

@@ -53,8 +53,8 @@ export default async function Home() {
           href="/eliminacion"
           emoji="🏆"
           titulo="Polla 2"
-          subtitulo="Octavos a la Final"
-          desc="Marcadores de eliminación, editables hasta 1h antes de cada partido."
+          subtitulo="Cuadro Eliminatorio"
+          desc="Arma tu bracket: elige quién avanza y el marcador. Bonos por clasificados, semifinalistas y podio."
           accent="#58a6ff"
         />
       </div>

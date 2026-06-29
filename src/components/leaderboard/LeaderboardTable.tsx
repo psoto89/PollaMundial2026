@@ -18,6 +18,10 @@ interface ScoreRow {
   total_qf: number
   total_sf: number
   total_final: number
+  total_bono_octavos: number
+  total_bono_cuartos: number
+  total_bono_semis: number
+  total_bono_finales: number
   total_clasificados: number
   total_semis: number
   total_preguntas: number
@@ -116,12 +120,17 @@ function buildBuckets(
   clasifLive: number,
 ): Bucket[] {
   if (scope === 'eliminacion') {
+    // Puntos por partido (5/2 + clasificado 2) por ronda + bonos de cuadro.
     return [
       { key: 'r32', label: 'R32', value: row.total_r32, live: live.r32 },
       { key: 'r16', label: 'R16', value: row.total_r16, live: live.r16 },
       { key: 'qf', label: 'QF', value: row.total_qf, live: live.qf },
       { key: 'sf', label: 'SF', value: row.total_sf, live: live.sf },
       { key: 'final', label: 'Final', value: row.total_final, live: live.final },
+      { key: 'b8', label: 'Clas 8vos', value: row.total_bono_octavos, live: 0 },
+      { key: 'b4', label: 'Clas 4tos', value: row.total_bono_cuartos, live: 0 },
+      { key: 'bsf', label: 'Semifin.', value: row.total_bono_semis, live: 0 },
+      { key: 'bfin', label: 'Podio', value: row.total_bono_finales, live: 0 },
     ]
   }
   if (scope === 'grupos') {

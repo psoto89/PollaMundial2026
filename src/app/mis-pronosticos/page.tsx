@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { type KnockoutMatch } from './MisPronosticosForm'
-import BracketView, { type BracketRound } from './BracketView'
-import { BRACKET_BY_ROUND } from '@/config/bracket2026'
+import InteractiveBracket, {
+  type TeamRef, type RealSlot, type MyPick,
+} from './InteractiveBracket'
 
 export const revalidate = 0
 
@@ -37,25 +37,25 @@ export default async function MisPronosticosPage() {
   const participantNombre =
     (account as unknown as { participants: { nombre: string } | null }).participants?.nombre ?? 'Participante'
 
-  // Config de deadline + rondas habilitadas para pronosticar
+  // Config: deadline + rondas habilitadas + activación de la polla
   const { data: cfg } = await supabase
     .from('app_config')
-    .select('deadline_minutes, open_rounds')
+    .select('deadline_minutes, open_rounds, bracket_activated_at')
     .single()
   const deadlineMinutes = cfg?.deadline_minutes ?? 60
   const openRounds = (cfg?.open_rounds as string[] | null) ?? []
+  const bracketActivatedAt = (cfg?.bracket_activated_at as string | null) ?? null
 
-  // Mi puntaje + posición en la tabla
+  // Mi puntaje + posición en la tabla de la Polla 2 (eliminación)
   const { data: allScores } = await supabase
     .from('scores_cache')
-    .select('participant_id, total, total_grupos, total_eliminacion, total_clasificados, total_semis, total_preguntas')
-    // Desempate: más puntos en partidos de fase de grupos
-    .order('total', { ascending: false })
+    .select('participant_id, total, total_grupos, total_eliminacion, total_bono_octavos, total_bono_cuartos, total_bono_semis, total_bono_finales')
+    .order('total_eliminacion', { ascending: false })
     .order('total_grupos', { ascending: false })
 
   type ScoreRow = {
     participant_id: string; total: number; total_grupos: number; total_eliminacion: number
-    total_clasificados: number; total_semis: number; total_preguntas: number
+    total_bono_octavos: number; total_bono_cuartos: number; total_bono_semis: number; total_bono_finales: number
   }
   const scoresList = (allScores ?? []) as ScoreRow[]
   const myRankIdx = scoresList.findIndex((s) => s.participant_id === participantId)
@@ -63,99 +63,75 @@ export default async function MisPronosticosPage() {
   const posicion = myRankIdx >= 0 ? myRankIdx + 1 : null
   const totalParticipantes = scoresList.length
 
-  // Partidos de eliminación (todo lo que no sea grupos), con equipos ya conocidos
+  // Equipos (para resolver el cuadro por id)
+  const { data: teamsRaw } = await supabase.from('teams').select('id, nombre').order('nombre')
+  const teams = (teamsRaw ?? []) as TeamRef[]
+
+  // Partidos reales de eliminación, indexados por slot
   const { data: matchesRaw } = await supabase
     .from('matches')
-    .select(`
-      id, fase, match_index, bracket_slot, kickoff_at, estado, goles_local, goles_visitante,
-      equipo_local:teams!equipo_local_id(nombre),
-      equipo_visitante:teams!equipo_visitante_id(nombre)
-    `)
+    .select('id, bracket_slot, kickoff_at, estado, goles_local, goles_visitante, advancer_team_id, equipo_local_id, equipo_visitante_id')
     .neq('fase', 'grupos')
-    .order('kickoff_at', { ascending: true })
 
   type MatchRow = {
-    id: string; fase: string; match_index: number; bracket_slot: string | null
-    kickoff_at: string | null; estado: string
-    goles_local: number | null; goles_visitante: number | null
-    equipo_local: { nombre: string } | null
-    equipo_visitante: { nombre: string } | null
+    id: string; bracket_slot: string | null; kickoff_at: string | null; estado: string
+    goles_local: number | null; goles_visitante: number | null; advancer_team_id: string | null
+    equipo_local_id: string | null; equipo_visitante_id: string | null
   }
-  const matchRows = (matchesRaw ?? []) as unknown as MatchRow[]
-  const matchIds = matchRows.map((m) => m.id)
-
-  // Mis pronósticos existentes (RLS deja ver los propios)
-  const { data: predsRaw } = matchIds.length > 0
-    ? await supabase
-        .from('predictions_group')
-        .select('match_id, pred_local, pred_visitante')
-        .in('match_id', matchIds)
-    : { data: [] }
-
-  const predByMatch = new Map(
-    ((predsRaw ?? []) as { match_id: string; pred_local: number; pred_visitante: number }[])
-      .map((p) => [p.match_id, p]),
-  )
-
-  // Conteo de pronósticos por partido (función SECURITY DEFINER: solo cuenta, no expone marcadores)
-  const { data: countsRaw } = await supabase.rpc('prediction_counts')
-  const countByMatch = new Map(
-    ((countsRaw ?? []) as { match_id: string; n: number }[]).map((c) => [c.match_id, c.n]),
-  )
-
-  const toKnockoutMatch = (m: MatchRow): KnockoutMatch => {
-    const pred = predByMatch.get(m.id)
-    return {
-      id: m.id,
-      fase: m.fase,
+  const realSlots: RealSlot[] = ((matchesRaw ?? []) as MatchRow[])
+    .filter((m) => !!m.bracket_slot)
+    .map((m) => ({
+      slot: m.bracket_slot!,
+      localId: m.equipo_local_id,
+      visitanteId: m.equipo_visitante_id,
       kickoffAt: m.kickoff_at,
       estado: m.estado,
-      localNombre: m.equipo_local?.nombre ?? '—',
-      visitanteNombre: m.equipo_visitante?.nombre ?? '—',
       golesLocal: m.goles_local,
       golesVisitante: m.goles_visitante,
-      predLocal: pred?.pred_local ?? null,
-      predVisitante: pred?.pred_visitante ?? null,
-      predCount: countByMatch.get(m.id) ?? 0,
-      totalParticipants: totalParticipantes,
-    }
-  }
+      advancerTeamId: m.advancer_team_id,
+    }))
 
-  // Partidos reales indexados por su slot de bracket
-  const matchBySlot = new Map(matchRows.filter((m) => m.bracket_slot).map((m) => [m.bracket_slot!, m]))
-
-  // Armar la rama completa desde la plantilla; superponer partidos reales por slot
-  const bracketRounds: BracketRound[] = BRACKET_BY_ROUND.map(({ round, slots }) => ({
-    round,
-    slots: slots.map((s) => {
-      const real = matchBySlot.get(s.slot)
-      return {
-        slot: s.slot,
-        localFeeder: s.localFeeder,
-        visitanteFeeder: s.visitanteFeeder,
-        match: real ? toKnockoutMatch(real) : null,
-      }
-    }),
+  // Mis picks del cuadro (RLS deja ver los propios)
+  const { data: picksRaw } = await supabase
+    .from('predictions_bracket')
+    .select('slot, advancer_team_id, pred_local, pred_visitante')
+    .eq('participant_id', participantId)
+  const myPicks = ((picksRaw ?? []) as {
+    slot: string; advancer_team_id: string | null; pred_local: number | null; pred_visitante: number | null
+  }[]).map((p): MyPick => ({
+    slot: p.slot,
+    advancerTeamId: p.advancer_team_id,
+    predLocal: p.pred_local,
+    predVisitante: p.pred_visitante,
   }))
 
+  // Conteo público de picks por slot (sin exponer marcadores)
+  const { data: countsRaw } = await supabase.rpc('bracket_prediction_counts')
+  const counts = (countsRaw ?? []) as { slot: string; n: number }[]
+
+  const bonos =
+    (myScore?.total_bono_octavos ?? 0) + (myScore?.total_bono_cuartos ?? 0) +
+    (myScore?.total_bono_semis ?? 0) + (myScore?.total_bono_finales ?? 0)
+  const partidos = (myScore?.total_eliminacion ?? 0) - bonos
+
   const stats: { label: string; value: number }[] = [
-    { label: 'Grupos', value: myScore?.total_grupos ?? 0 },
-    { label: 'Eliminación', value: myScore?.total_eliminacion ?? 0 },
-    { label: 'Clasificados', value: myScore?.total_clasificados ?? 0 },
-    { label: 'Semis', value: myScore?.total_semis ?? 0 },
-    { label: 'Preguntas', value: myScore?.total_preguntas ?? 0 },
+    { label: 'Partidos', value: partidos },
+    { label: 'Bono 8vos', value: myScore?.total_bono_octavos ?? 0 },
+    { label: 'Bono Cuartos', value: myScore?.total_bono_cuartos ?? 0 },
+    { label: 'Bono Semis', value: myScore?.total_bono_semis ?? 0 },
+    { label: 'Bono Finales', value: myScore?.total_bono_finales ?? 0 },
   ]
 
   return (
     <div className="space-y-6">
-      {/* Header: hola + posición + puntos */}
+      {/* Header: hola + posición + puntos de eliminación */}
       <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-5">
         <p className="text-sm text-[#768390]">Hola,</p>
         <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight">{participantNombre}</h1>
         <div className="flex items-center gap-4 mt-3">
           <div>
-            <div className="text-3xl font-black text-[#9EE637] tabular-nums">{myScore?.total ?? 0}</div>
-            <div className="text-xs text-[#768390]">puntos</div>
+            <div className="text-3xl font-black text-[#9EE637] tabular-nums">{myScore?.total_eliminacion ?? 0}</div>
+            <div className="text-xs text-[#768390]">puntos eliminación</div>
           </div>
           {posicion !== null && (
             <div className="border-l border-[#30363d] pl-4">
@@ -166,7 +142,7 @@ export default async function MisPronosticosPage() {
         </div>
       </div>
 
-      {/* Desglose por sección */}
+      {/* Desglose de la Polla 2 */}
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
         {stats.map(({ label, value }) => (
           <div key={label} className="bg-[#161b22] border border-[#30363d] rounded-lg p-3 text-center">
@@ -176,13 +152,23 @@ export default async function MisPronosticosPage() {
         ))}
       </div>
 
-      {/* Pronósticos de eliminación (self-service) */}
+      {/* Cuadro interactivo */}
       <div>
-        <h2 className="text-lg font-semibold text-[#e6edf3] mb-1">Eliminación</h2>
+        <h2 className="text-lg font-semibold text-[#e6edf3] mb-1">Tu cuadro</h2>
         <p className="text-xs text-[#768390] mb-3">
-          Marcador por partido · cierra {deadlineMinutes} min antes de cada uno
+          Toca el equipo que avanza en cada partido — alimenta automáticamente la siguiente ronda.
+          Marcador de 90&apos;. Editable hasta {deadlineMinutes} min antes de cada partido.
         </p>
-        <BracketView rounds={bracketRounds} openRounds={openRounds} deadlineMinutes={deadlineMinutes} />
+        <InteractiveBracket
+          teams={teams}
+          realSlots={realSlots}
+          myPicks={myPicks}
+          counts={counts}
+          openRounds={openRounds}
+          deadlineMinutes={deadlineMinutes}
+          bracketActivatedAt={bracketActivatedAt}
+          totalParticipantes={totalParticipantes}
+        />
       </div>
 
       {/* Acceso al desglose completo (partido por partido) */}

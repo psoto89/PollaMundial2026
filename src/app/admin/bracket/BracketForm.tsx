@@ -26,11 +26,13 @@ export default function BracketForm({
   existing,
   usedSlots,
   openRounds,
+  bracketActivatedAt,
 }: {
   teams: TeamOption[]
   existing: ExistingMatch[]
   usedSlots: string[]
   openRounds: string[]
+  bracketActivatedAt: string | null
 }) {
   const router = useRouter()
   const [fase, setFase] = useState<RoundKey>('dieciseisavos')
@@ -82,6 +84,9 @@ export default function BracketForm({
 
   return (
     <div className="space-y-6">
+      {/* Activación de la polla ("desde hoy hacia adelante") */}
+      <ActivationControl initial={bracketActivatedAt} />
+
       {/* Habilitar pronóstico por ronda */}
       <RoundsToggle initial={openRounds} />
 
@@ -187,6 +192,81 @@ export default function BracketForm({
               </div>
             ))}
           </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Marca de activación de la polla. Solo participan/puntúan los partidos cuyo kickoff
+ * sea posterior a esta fecha; los ya iniciados al activar quedan cerrados ("desde hoy
+ * hacia adelante"). app_config.bracket_activated_at.
+ */
+function ActivationControl({ initial }: { initial: string | null }) {
+  const router = useRouter()
+  // ISO → valor para <input datetime-local> en hora local
+  const toLocalInput = (iso: string | null): string => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const off = d.getTimezoneOffset() * 60_000
+    return new Date(d.getTime() - off).toISOString().slice(0, 16)
+  }
+  const [value, setValue] = useState<string>(toLocalInput(initial))
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [msg, setMsg] = useState('')
+
+  async function patch(bracketActivatedAt: string | null, okMsg: string) {
+    setStatus('saving'); setMsg('')
+    try {
+      const res = await fetch('/api/admin/bracket', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bracketActivatedAt }),
+      })
+      const data = await res.json()
+      if (res.ok) { setStatus('saved'); setMsg(okMsg); router.refresh() }
+      else { setStatus('error'); setMsg(data.error?.toString?.() ?? 'Error') }
+    } catch {
+      setStatus('error'); setMsg('Error de red')
+    }
+  }
+
+  return (
+    <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 space-y-3">
+      <div>
+        <h2 className="text-sm font-semibold text-[#e6edf3]">Activación de la polla</h2>
+        <p className="text-xs text-[#768390] mt-1">
+          Solo participan los partidos que arranquen <strong>después</strong> de esta fecha. Los ya
+          iniciados al activar quedan cerrados y no otorgan puntos. Vacío = todos participan.
+        </p>
+        <p className="text-xs text-[#768390] mt-1">
+          Actual: <span className="text-[#e6edf3]">{initial ? new Date(initial).toLocaleString('es-CO') : '— sin activación —'}</span>
+        </p>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <input
+          type="datetime-local"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="px-3 py-2 rounded-md bg-[#0d1117] border border-[#30363d] text-sm text-[#e6edf3] focus:outline-none focus:border-[#9EE637]"
+        />
+        <button
+          onClick={() => value && patch(new Date(value).toISOString(), 'Activación guardada ✓')}
+          disabled={status === 'saving' || !value}
+          className="text-sm font-semibold px-4 py-2 rounded-md bg-[#9EE637] text-[#0d1117] disabled:opacity-50"
+        >
+          {status === 'saving' ? 'Guardando…' : 'Activar desde'}
+        </button>
+        <button
+          onClick={() => { setValue(''); patch(null, 'Activación quitada ✓') }}
+          disabled={status === 'saving'}
+          className="text-sm font-medium px-3 py-2 rounded-md border border-[#30363d] text-[#768390] hover:text-[#e6edf3] disabled:opacity-50"
+        >
+          Quitar
+        </button>
+        {msg && (
+          <span className={`text-xs ${status === 'error' ? 'text-[#f85149]' : 'text-[#9EE637]'}`}>{msg}</span>
         )}
       </div>
     </div>

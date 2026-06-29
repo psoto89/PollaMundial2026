@@ -112,9 +112,56 @@ export default function ReglasPage() {
         ))}
       </Section>
 
+      {/* 5. Polla 2 · Cuadro eliminatorio */}
+      <Section
+        num="5"
+        title="Polla 2 · Cuadro eliminatorio"
+        subtitle="Arma tu bracket: marcador de 90′ + quién avanza, de 16avos a la Final"
+      >
+        <p className="text-xs font-semibold text-[#768390] uppercase tracking-wider mb-1">Por partido</p>
+        <RuleRow
+          label="Marcador exacto de 90′ + reposición (no cuenta tiempo extra ni penales)"
+          pts="+5 pts"
+          color="blue"
+          detail="ya incluye acertar el signo"
+        />
+        <RuleRow
+          label="Solo el signo de 90′ (gana o empata)"
+          pts="+2 pts"
+          color="green"
+        />
+        <RuleRow
+          label="Aciertas el equipo que clasifica (tras tiempo extra/penales)"
+          pts="+2 pts"
+          color="green"
+          detail="independiente del marcador · máximo 7 por partido"
+        />
+        <div className="mt-3 space-y-1.5">
+          <p className="text-xs font-semibold text-[#768390] uppercase tracking-wider mb-2">Bonos del cuadro</p>
+          {[
+            { puesto: 'Cada clasificado a 8vos (máx 16)', pts: '+1 pt' },
+            { puesto: 'Cada clasificado a cuartos (máx 16)', pts: '+2 pts' },
+            { puesto: 'Cada semifinalista (máx 20)', pts: '+5 pts' },
+            { puesto: '🥇 Campeón', pts: '+25 pts' },
+            { puesto: '🥈 Subcampeón', pts: '+15 pts' },
+            { puesto: '🥉 Tercer puesto', pts: '+10 pts' },
+          ].map(({ puesto, pts }) => (
+            <div key={puesto} className="flex items-center justify-between py-2 px-3 bg-[#1c2128] rounded-lg">
+              <span className="text-sm text-[#e6edf3]">{puesto}</span>
+              <span className="text-sm font-bold text-[#58a6ff]">{pts}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 p-3 bg-[#1c2128] rounded-lg text-xs text-[#768390]">
+          <strong className="text-[#e6edf3]">Cierre:</strong> cada partido se puede editar hasta unos minutos
+          antes de su inicio (hora de Colombia). Los partidos ya jugados al activar la polla no participan.
+        </div>
+      </Section>
+
       {/* Resumen de puntos máximos */}
       <div className="bg-[#161b22] border border-[#9EE637]/20 rounded-xl p-4">
         <h3 className="text-sm font-semibold text-[#e6edf3] mb-3">Puntos máximos posibles</h3>
+        <p className="text-xs text-[#768390] mb-2">Polla 1 (grupos + clasificados + puestos + preguntas)</p>
         <div className="space-y-1.5">
           {[
             { cat: '1. Partidos de grupos (72 × 5)', max: '360 pts' },
@@ -128,8 +175,25 @@ export default function ReglasPage() {
             </div>
           ))}
           <div className="flex items-center justify-between text-sm font-bold border-t border-[#30363d] pt-2 mt-2">
-            <span className="text-[#e6edf3]">GRAN TOTAL</span>
+            <span className="text-[#e6edf3]">TOTAL POLLA 1</span>
             <span className="text-[#9EE637] text-base">850 pts</span>
+          </div>
+        </div>
+
+        <p className="text-xs text-[#768390] mb-2 mt-5">Polla 2 (cuadro eliminatorio)</p>
+        <div className="space-y-1.5">
+          {[
+            { cat: 'Partidos (32 × 7)', max: '224 pts' },
+            { cat: 'Bonos de cuadro (16+16+20+25+15+10)', max: '102 pts' },
+          ].map(({ cat, max }) => (
+            <div key={cat} className="flex items-center justify-between text-sm">
+              <span className="text-[#768390]">{cat}</span>
+              <span className="font-bold text-[#e6edf3] tabular-nums">{max}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between text-sm font-bold border-t border-[#30363d] pt-2 mt-2">
+            <span className="text-[#e6edf3]">TOTAL POLLA 2</span>
+            <span className="text-[#9EE637] text-base">326 pts</span>
           </div>
         </div>
       </div>

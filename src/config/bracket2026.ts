@@ -22,12 +22,22 @@ export type RoundKey =
   | 'tercer_puesto'
   | 'final'
 
+/** De dónde sale un equipo de una ronda de avance: ganador o perdedor de otro slot. */
+export interface SlotSource {
+  slot: string
+  kind: 'winner' | 'loser'
+}
+
 export interface BracketSlot {
   slot: string // identificador estable, mapea a matches.bracket_slot
   round: RoundKey
   order: number // posición dentro de la ronda (para ordenar)
   localFeeder: string // '1A' | '3° (C/E/F/H)' | 'Ganador R32-01' ...
   visitanteFeeder: string
+  // Para rondas de avance: qué slot alimenta cada lado (el bracket interactivo lo usa
+  // para propagar el equipo que el usuario eligió). R32 no tiene fuentes (equipos reales).
+  localSource?: SlotSource
+  visitanteSource?: SlotSource
 }
 
 export const ROUND_ORDER: RoundKey[] = [
@@ -72,33 +82,49 @@ const DIECISEISAVOS: BracketSlot[] = [
 
 // ─── Rondas de avance: feeders = ganadores de la ronda previa ──
 // Árbol binario: cada partido toma los ganadores de dos partidos consecutivos.
-const OCTAVOS: BracketSlot[] = Array.from({ length: 8 }, (_, i) => ({
-  slot: `R16-${String(i + 1).padStart(2, '0')}`,
-  round: 'octavos' as const,
-  order: i + 1,
-  localFeeder: `Ganador R32-${String(2 * i + 1).padStart(2, '0')}`,
-  visitanteFeeder: `Ganador R32-${String(2 * i + 2).padStart(2, '0')}`,
-}))
+const OCTAVOS: BracketSlot[] = Array.from({ length: 8 }, (_, i) => {
+  const a = String(2 * i + 1).padStart(2, '0')
+  const b = String(2 * i + 2).padStart(2, '0')
+  return {
+    slot: `R16-${String(i + 1).padStart(2, '0')}`,
+    round: 'octavos' as const,
+    order: i + 1,
+    localFeeder: `Ganador R32-${a}`,
+    visitanteFeeder: `Ganador R32-${b}`,
+    localSource: { slot: `R32-${a}`, kind: 'winner' as const },
+    visitanteSource: { slot: `R32-${b}`, kind: 'winner' as const },
+  }
+})
 
-const CUARTOS: BracketSlot[] = Array.from({ length: 4 }, (_, i) => ({
-  slot: `QF-${i + 1}`,
-  round: 'cuartos' as const,
-  order: i + 1,
-  localFeeder: `Ganador R16-${String(2 * i + 1).padStart(2, '0')}`,
-  visitanteFeeder: `Ganador R16-${String(2 * i + 2).padStart(2, '0')}`,
-}))
+const CUARTOS: BracketSlot[] = Array.from({ length: 4 }, (_, i) => {
+  const a = String(2 * i + 1).padStart(2, '0')
+  const b = String(2 * i + 2).padStart(2, '0')
+  return {
+    slot: `QF-${i + 1}`,
+    round: 'cuartos' as const,
+    order: i + 1,
+    localFeeder: `Ganador R16-${a}`,
+    visitanteFeeder: `Ganador R16-${b}`,
+    localSource: { slot: `R16-${a}`, kind: 'winner' as const },
+    visitanteSource: { slot: `R16-${b}`, kind: 'winner' as const },
+  }
+})
 
 const SEMIS: BracketSlot[] = [
-  { slot: 'SF-1', round: 'semis', order: 1, localFeeder: 'Ganador QF-1', visitanteFeeder: 'Ganador QF-2' },
-  { slot: 'SF-2', round: 'semis', order: 2, localFeeder: 'Ganador QF-3', visitanteFeeder: 'Ganador QF-4' },
+  { slot: 'SF-1', round: 'semis', order: 1, localFeeder: 'Ganador QF-1', visitanteFeeder: 'Ganador QF-2',
+    localSource: { slot: 'QF-1', kind: 'winner' }, visitanteSource: { slot: 'QF-2', kind: 'winner' } },
+  { slot: 'SF-2', round: 'semis', order: 2, localFeeder: 'Ganador QF-3', visitanteFeeder: 'Ganador QF-4',
+    localSource: { slot: 'QF-3', kind: 'winner' }, visitanteSource: { slot: 'QF-4', kind: 'winner' } },
 ]
 
 const TERCER_PUESTO: BracketSlot[] = [
-  { slot: '3P', round: 'tercer_puesto', order: 1, localFeeder: 'Perdedor SF-1', visitanteFeeder: 'Perdedor SF-2' },
+  { slot: '3P', round: 'tercer_puesto', order: 1, localFeeder: 'Perdedor SF-1', visitanteFeeder: 'Perdedor SF-2',
+    localSource: { slot: 'SF-1', kind: 'loser' }, visitanteSource: { slot: 'SF-2', kind: 'loser' } },
 ]
 
 const FINAL: BracketSlot[] = [
-  { slot: 'F', round: 'final', order: 1, localFeeder: 'Ganador SF-1', visitanteFeeder: 'Ganador SF-2' },
+  { slot: 'F', round: 'final', order: 1, localFeeder: 'Ganador SF-1', visitanteFeeder: 'Ganador SF-2',
+    localSource: { slot: 'SF-1', kind: 'winner' }, visitanteSource: { slot: 'SF-2', kind: 'winner' } },
 ]
 
 export const BRACKET_2026: BracketSlot[] = [

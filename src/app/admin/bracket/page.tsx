@@ -17,7 +17,7 @@ export default async function AdminBracketPage() {
       `)
       .neq('fase', 'grupos')
       .order('kickoff_at', { ascending: true }),
-    db.from('app_config').select('open_rounds').eq('id', 1).maybeSingle(),
+    db.from('app_config').select('open_rounds, bracket_activated_at').eq('id', 1).maybeSingle(),
   ])
 
   const teamOptions = ((teams ?? []) as { id: string; nombre: string }[]).map((t) => ({
@@ -42,6 +42,7 @@ export default async function AdminBracketPage() {
   }))
   const usedSlots = rows.map((m) => m.bracket_slot).filter((s): s is string => !!s)
   const openRounds = (cfg?.open_rounds as string[] | null) ?? []
+  const bracketActivatedAt = (cfg?.bracket_activated_at as string | null) ?? null
 
   return (
     <div className="space-y-6">
@@ -57,6 +58,7 @@ export default async function AdminBracketPage() {
         existing={existing}
         usedSlots={usedSlots}
         openRounds={openRounds}
+        bracketActivatedAt={bracketActivatedAt}
       />
     </div>
   )

@@ -9,6 +9,8 @@ import {
   scoreQualify,
   scoreSemis,
   scoreQuestions,
+  scoreKnockoutMatch,
+  scoreBracketBonuses,
   computeTotals,
 } from '@/lib/scoring'
 
@@ -346,6 +348,114 @@ describe('scoreQuestions', () => {
       official,
     )
     expect(r).toEqual({ acertadas: 3, total: 21 })
+  })
+})
+
+// ─── Polla 2 (bracket): partido de eliminación ────────────────────────────────
+
+describe('scoreKnockoutMatch', () => {
+  it('marcador exacto + clasificado correcto → 5 + 2 = 7 (máximo)', () => {
+    const r = scoreKnockoutMatch(
+      { predLocal: 1, predVisitante: 1, advancer: 'Colombia' },
+      { golesLocal: 1, golesVisitante: 1, advancer: 'Colombia' },
+    )
+    expect(r).toEqual({ marcador: 5, clasificado: 2, total: 7 })
+  })
+
+  it('exacto NO suma el +2 de signo (5, no 7 por marcador)', () => {
+    const r = scoreKnockoutMatch(
+      { predLocal: 2, predVisitante: 0, advancer: null },
+      { golesLocal: 2, golesVisitante: 0, advancer: null },
+    )
+    expect(r).toEqual({ marcador: 5, clasificado: 0, total: 5 })
+  })
+
+  it('signo correcto sin exacto → 2', () => {
+    const r = scoreKnockoutMatch(
+      { predLocal: 2, predVisitante: 0, advancer: null },
+      { golesLocal: 3, golesVisitante: 1, advancer: null },
+    )
+    expect(r.marcador).toBe(2)
+  })
+
+  it("empate de 90' acertado → signo +2; el clasificado puede no coincidir", () => {
+    const r = scoreKnockoutMatch(
+      { predLocal: 0, predVisitante: 0, advancer: 'Brasil' },
+      { golesLocal: 1, golesVisitante: 1, advancer: 'Argentina' },
+    )
+    // empate predicho vs empate real → signo correcto (2), pero advancer distinto (0)
+    expect(r).toEqual({ marcador: 2, clasificado: 0, total: 2 })
+  })
+
+  it('clasificado correcto aunque el marcador falle → 0 + 2 = 2', () => {
+    const r = scoreKnockoutMatch(
+      { predLocal: 2, predVisitante: 1, advancer: 'México' },
+      { golesLocal: 0, golesVisitante: 0, advancer: 'mexico' }, // normaliza acentos/case
+    )
+    expect(r).toEqual({ marcador: 0, clasificado: 2, total: 2 })
+  })
+
+  it('sin resultado todavía → 0', () => {
+    const r = scoreKnockoutMatch(
+      { predLocal: 1, predVisitante: 0, advancer: 'Italia' },
+      { golesLocal: null, golesVisitante: null, advancer: null },
+    )
+    expect(r.total).toBe(0)
+  })
+})
+
+// ─── Polla 2 (bracket): bonos de cuadro ───────────────────────────────────────
+
+describe('scoreBracketBonuses', () => {
+  const official = {
+    octavos: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'],
+    cuartos: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'],
+    semis: ['A', 'B', 'C', 'D'],
+    campeon: 'A',
+    subcampeon: 'B',
+    tercero: 'C',
+  }
+
+  it('todo perfecto → 16 + 16 + 20 + 25 + 15 + 10 = 102', () => {
+    const r = scoreBracketBonuses({ ...official }, official)
+    expect(r).toEqual({
+      octavos: 16, cuartos: 16, semis: 20,
+      campeon: 25, subcampeon: 15, tercero: 10, total: 102,
+    })
+  })
+
+  it('aciertos parciales se multiplican por su valor', () => {
+    const r = scoreBracketBonuses(
+      {
+        octavos: ['A', 'B', 'Z', 'Y'],   // 2 aciertos × 1 = 2
+        cuartos: ['A', 'X'],             // 1 acierto × 2 = 2
+        semis: ['A', 'D', 'X'],          // 2 aciertos × 5 = 10
+        campeon: 'A',                    // 25
+        subcampeon: 'X',                 // 0
+        tercero: 'C',                    // 10
+      },
+      official,
+    )
+    expect(r).toEqual({
+      octavos: 2, cuartos: 2, semis: 10,
+      campeon: 25, subcampeon: 0, tercero: 10, total: 49,
+    })
+  })
+
+  it('picks duplicados no inflan el conteo', () => {
+    const r = scoreBracketBonuses(
+      { octavos: ['A', 'A', 'A'], cuartos: [], semis: [], campeon: null, subcampeon: null, tercero: null },
+      official,
+    )
+    expect(r.octavos).toBe(1)
+  })
+
+  it('todo vacío → 0', () => {
+    const r = scoreBracketBonuses(
+      { octavos: [], cuartos: [], semis: [], campeon: null, subcampeon: null, tercero: null },
+      official,
+    )
+    expect(r.total).toBe(0)
   })
 })
 

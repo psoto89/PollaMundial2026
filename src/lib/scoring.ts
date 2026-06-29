@@ -10,6 +10,8 @@ import type {
   DesgloseClasificados,
   DesgloseSemis,
   DesglosePreguntas,
+  DesgloseKnockout,
+  DesgloseBonos,
   Totales,
   Puesto,
   PreguntaKey,
@@ -244,6 +246,129 @@ export function answersMatch(
   }
 
   return false
+}
+
+// ─── Polla 2 (bracket): partido de eliminación ────────────────────────────────
+
+export interface KnockoutMatchPred {
+  predLocal: number | null
+  predVisitante: number | null
+  /** Equipo (id o nombre) que el usuario predice que avanza */
+  advancer: string | null
+}
+
+export interface KnockoutMatchResult {
+  golesLocal: number | null
+  golesVisitante: number | null
+  /** Equipo (id o nombre) que avanzó oficialmente (tras ET/penales si aplica) */
+  advancer: string | null
+}
+
+/**
+ * Calcula puntos por un partido de eliminación (Polla 2 reconvertida).
+ *
+ * Reglas (el marcador SIEMPRE es de 90' + reposición, no ET ni penales):
+ *   - Marcador exacto → 5 (ya implica el ganador/empate correcto; NO se suma el +2)
+ *   - Ganador/empate correcto (signo de 90') sin marcador exacto → 2
+ *   - Equipo clasificado correcto (quién avanza) → +2, independiente del marcador
+ *   → máximo 7 por partido.
+ */
+export function scoreKnockoutMatch(
+  pred: KnockoutMatchPred,
+  result: KnockoutMatchResult,
+): DesgloseKnockout {
+  let marcador = 0
+  if (
+    result.golesLocal !== null && result.golesVisitante !== null &&
+    pred.predLocal !== null && pred.predVisitante !== null
+  ) {
+    const signoReal = getSign(result.golesLocal, result.golesVisitante)
+    const signoPred = getSign(pred.predLocal, pred.predVisitante)
+    if (signoPred === signoReal) {
+      marcador =
+        pred.predLocal === result.golesLocal && pred.predVisitante === result.golesVisitante
+          ? 5
+          : 2
+    }
+  }
+
+  const clasificado =
+    pred.advancer && result.advancer &&
+    normalizeText(pred.advancer) === normalizeText(result.advancer)
+      ? 2
+      : 0
+
+  return { marcador, clasificado, total: marcador + clasificado }
+}
+
+// ─── Polla 2 (bracket): bonos de cuadro ───────────────────────────────────────
+
+export interface BracketPicks {
+  octavos: string[]          // equipos que el usuario predice que clasifican a 8vos (advancers de R32)
+  cuartos: string[]          // advancers de R16
+  semis: string[]            // advancers de QF (semifinalistas)
+  campeon: string | null     // advancer de F
+  subcampeon: string | null  // finalista que pierde la F
+  tercero: string | null     // advancer de 3P
+}
+
+export interface BracketOfficial {
+  octavos: string[]
+  cuartos: string[]
+  semis: string[]
+  campeon: string | null
+  subcampeon: string | null
+  tercero: string | null
+}
+
+/** Cuenta cuántos picks (sin duplicados) están en el conjunto oficial, normalizando nombres. */
+function countHits(picks: string[], official: string[]): number {
+  const off = new Set(official.map(normalizeText))
+  const seen = new Set<string>()
+  let n = 0
+  for (const p of picks) {
+    const k = normalizeText(p)
+    if (off.has(k) && !seen.has(k)) {
+      n++
+      seen.add(k)
+    }
+  }
+  return n
+}
+
+function sameTeam(a: string | null, b: string | null): boolean {
+  return !!a && !!b && normalizeText(a) === normalizeText(b)
+}
+
+/**
+ * Calcula los bonos de cuadro de la Polla 2.
+ *
+ * Reglas:
+ *   - Clasificados a 8vos:  1 c/u (máx 16)
+ *   - Clasificados a cuartos: 2 c/u (máx 16, 8 equipos)
+ *   - Semifinalistas:       5 c/u (máx 20)
+ *   - Campeón 25 · Subcampeón 15 · Tercer puesto 10
+ */
+export function scoreBracketBonuses(
+  picks: BracketPicks,
+  official: BracketOfficial,
+): DesgloseBonos {
+  const octavos = countHits(picks.octavos, official.octavos) * 1
+  const cuartos = countHits(picks.cuartos, official.cuartos) * 2
+  const semis = countHits(picks.semis, official.semis) * 5
+  const campeon = sameTeam(picks.campeon, official.campeon) ? 25 : 0
+  const subcampeon = sameTeam(picks.subcampeon, official.subcampeon) ? 15 : 0
+  const tercero = sameTeam(picks.tercero, official.tercero) ? 10 : 0
+
+  return {
+    octavos,
+    cuartos,
+    semis,
+    campeon,
+    subcampeon,
+    tercero,
+    total: octavos + cuartos + semis + campeon + subcampeon + tercero,
+  }
 }
 
 // ─── Totales por participante ─────────────────────────────────────────────────

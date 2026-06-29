@@ -19,6 +19,9 @@ const matchResultSchema = z.object({
   estado: z.enum(['scheduled', 'live', 'finished']),
   minuto: z.number().int().min(0).max(120).nullable().optional(),
   kickoffAt: z.string().nullable().optional(),
+  // Eliminación: equipo que clasificó (90' puede ser empate → ET/penales deciden).
+  // El marcador (goles_*) es SIEMPRE de 90'+reposición; el avance se guarda aparte.
+  advancerTeamId: z.string().uuid().nullable().optional(),
 })
 
 const officialResultSchema = z.object({
@@ -69,18 +72,24 @@ async function handleMatchResult(
   data: MatchResultInput,
   req: NextRequest,
 ) {
+  const updateData: Record<string, unknown> = {
+    goles_local:     data.golesLocal,
+    goles_visitante: data.golesVisitante,
+    estado:          data.estado,
+    minuto:          data.minuto ?? null,
+    kickoff_at:      data.kickoffAt ?? null,
+    // Marcar que el último update fue manual → protege de sobrescritura por webhook
+    last_source:     'manual',
+    last_source_at:  new Date().toISOString(),
+  }
+  // Solo tocar el clasificado si el form lo envió (evita borrarlo en ediciones parciales)
+  if (data.advancerTeamId !== undefined) {
+    updateData.advancer_team_id = data.advancerTeamId
+  }
+
   const { error } = await db
     .from('matches')
-    .update({
-      goles_local:     data.golesLocal,
-      goles_visitante: data.golesVisitante,
-      estado:          data.estado,
-      minuto:          data.minuto ?? null,
-      kickoff_at:      data.kickoffAt ?? null,
-      // Marcar que el último update fue manual → protege de sobrescritura por webhook
-      last_source:     'manual',
-      last_source_at:  new Date().toISOString(),
-    })
+    .update(updateData)
     .eq('id', data.matchId)
   if (error) throw new Error(`match update: ${error.message}`)
 
