@@ -12,6 +12,7 @@ import {
   scoreSemis,
   scoreQuestions,
   scoreKnockoutMatch,
+  deriveAdvancer,
   scoreBracketBonuses,
   type QualifyOfficial,
   type SemisOfficial,
@@ -122,7 +123,8 @@ export async function POST(req: NextRequest) {
         bucket,
         golesLocal: m.goles_local,
         golesVisitante: m.goles_visitante,
-        advancer: m.advancer_team_id,
+        // El que avanza se deriva del marcador (gana → pasa); empate → el explícito (penales)
+        advancer: deriveAdvancer(m.goles_local, m.goles_visitante, m.equipo_local_id, m.equipo_visitante_id, m.advancer_team_id),
         localId: m.equipo_local_id,
         visitanteId: m.equipo_visitante_id,
       })
@@ -166,7 +168,15 @@ export async function POST(req: NextRequest) {
 
       // ── Eliminación: puntos por partido (por ronda) + bonos de cuadro ──
       const bracketPreds = (bracketPredsByPart.get(p.id) ?? []) as unknown as BracketPred[]
-      const pickBySlot = new Map(bracketPreds.map((b) => [b.slot, b]))
+      // El avance del usuario se deriva de SU marcador (gana → pasa); empate → el explícito.
+      const effectiveBracketPreds = bracketPreds.map((b) => {
+        const sm = slotMatches.get(b.slot)
+        const adv = sm
+          ? deriveAdvancer(b.pred_local, b.pred_visitante, sm.localId, sm.visitanteId, b.advancer_team_id)
+          : b.advancer_team_id
+        return { ...b, advancer_team_id: adv }
+      })
+      const pickBySlot = new Map(effectiveBracketPreds.map((b) => [b.slot, b]))
 
       const rounds: Record<RoundBucket, number> = { r32: 0, r16: 0, qf: 0, sf: 0, final: 0 }
       for (const [slot, sm] of slotMatches) {
@@ -179,7 +189,7 @@ export async function POST(req: NextRequest) {
         rounds[sm.bucket] += ds.total
       }
 
-      const bonos = scoreBracketBonuses(buildBracketPicks(bracketPreds), bracketOfficial)
+      const bonos = scoreBracketBonuses(buildBracketPicks(effectiveBracketPreds), bracketOfficial)
       const totalEliminacion =
         rounds.r32 + rounds.r16 + rounds.qf + rounds.sf + rounds.final + bonos.total
 
