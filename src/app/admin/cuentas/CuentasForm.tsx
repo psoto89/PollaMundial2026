@@ -8,6 +8,7 @@ export interface ParticipantAccount {
   nombre: string
   email: string
   vinculado: boolean
+  selfJoin: boolean
 }
 
 export interface UnlinkedUser {
@@ -30,8 +31,31 @@ export default function CuentasForm({
   unlinkedUsers: UnlinkedUser[]
   participantOptions: ParticipantOption[]
 }) {
+  const selfJoinUsers = rows.filter((r) => r.selfJoin)
+  const rosterRows = rows.filter((r) => !r.selfJoin)
+
   return (
     <div className="space-y-8">
+      {/* Sección 0: usuarios self-service (entraron por el login) → se pueden borrar */}
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-[#e6edf3]">
+          🧪 Usuarios self-service (login por correo)
+          {selfJoinUsers.length > 0 && (
+            <span className="ml-2 text-[10px] font-semibold bg-[#58a6ff]/15 text-[#58a6ff] px-1.5 py-0.5 rounded">
+              {selfJoinUsers.length}
+            </span>
+          )}
+        </h2>
+        <p className="text-xs text-[#768390]">
+          Cuentas creadas desde el login (no son del roster de la Etapa 1). Útil para borrar usuarios de prueba.
+        </p>
+        {selfJoinUsers.length === 0 ? (
+          <p className="text-sm text-[#768390]">Ninguno todavía.</p>
+        ) : (
+          selfJoinUsers.map((r) => <DeleteRow key={r.participantId} row={r} />)
+        )}
+      </section>
+
       {/* Sección 1: cuentas nuevas sin vincular */}
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-[#e6edf3]">
@@ -51,13 +75,71 @@ export default function CuentasForm({
         )}
       </section>
 
-      {/* Sección 2: pre-asignar email por participante */}
+      {/* Sección 2: pre-asignar email por participante (roster Etapa 1) */}
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-[#e6edf3]">Pre-asignar email por participante</h2>
-        {rows.map((r) => (
+        {rosterRows.map((r) => (
           <CuentaRow key={r.participantId} row={r} />
         ))}
       </section>
+    </div>
+  )
+}
+
+/** Fila de un usuario self-service con botón para borrarlo (cuenta + picks + auth). */
+function DeleteRow({ row }: { row: ParticipantAccount }) {
+  const router = useRouter()
+  const [status, setStatus] = useState<'idle' | 'confirm' | 'deleting' | 'error'>('idle')
+  const [msg, setMsg] = useState('')
+
+  async function del() {
+    setStatus('deleting'); setMsg('')
+    try {
+      const res = await fetch('/api/admin/cuentas', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ participantId: row.participantId }),
+      })
+      const data = await res.json()
+      if (res.ok) { router.refresh() }
+      else { setStatus('error'); setMsg(data.error?.toString?.() ?? 'Error') }
+    } catch {
+      setStatus('error'); setMsg('Error de red')
+    }
+  }
+
+  return (
+    <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3 flex items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium text-[#e6edf3] truncate">{row.nombre}</div>
+        <div className="text-xs text-[#768390] truncate">{row.email}</div>
+      </div>
+      {status === 'confirm' ? (
+        <>
+          <span className="text-xs text-[#f85149]">¿Seguro?</span>
+          <button
+            onClick={del}
+            className="text-xs font-semibold px-3 py-1.5 rounded-md bg-[#f85149] text-white shrink-0"
+          >
+            Sí, borrar
+          </button>
+          <button
+            onClick={() => setStatus('idle')}
+            className="text-xs px-3 py-1.5 rounded-md border border-[#30363d] text-[#768390] shrink-0"
+          >
+            Cancelar
+          </button>
+        </>
+      ) : (
+        <button
+          onClick={() => setStatus('confirm')}
+          disabled={status === 'deleting'}
+          className="text-xs font-semibold px-3 py-1.5 rounded-md border border-[#f85149]/40 text-[#f85149] hover:bg-[#f85149]/10 disabled:opacity-50 shrink-0"
+        >
+          {status === 'deleting' ? 'Borrando…' : '🗑 Borrar'}
+        </button>
+      )}
+      {msg && <span className="text-xs text-[#f85149] shrink-0">{msg}</span>}
     </div>
   )
 }

@@ -7,7 +7,7 @@ export default async function AdminCuentasPage() {
   const db = createAdminClient()
 
   const [{ data: participants }, { data: accounts }, authList] = await Promise.all([
-    db.from('participants').select('id, nombre').order('nombre'),
+    db.from('participants').select('id, nombre, sheet_alias').order('nombre'),
     db.from('participant_accounts').select('participant_id, email, auth_user_id'),
     db.auth.admin.listUsers({ page: 1, perPage: 1000 }),
   ])
@@ -16,7 +16,7 @@ export default async function AdminCuentasPage() {
   const accByPart = new Map(accList.map((a) => [a.participant_id, a]))
   const linkedAuthIds = new Set(accList.map((a) => a.auth_user_id).filter(Boolean) as string[])
 
-  const partList = (participants ?? []) as { id: string; nombre: string }[]
+  const partList = (participants ?? []) as { id: string; nombre: string; sheet_alias: string }[]
 
   const rows: ParticipantAccount[] = partList.map((p) => {
     const acc = accByPart.get(p.id)
@@ -25,6 +25,8 @@ export default async function AdminCuentasPage() {
       nombre: p.nombre,
       email: acc?.email ?? '',
       vinculado: !!acc?.auth_user_id,
+      // Cuenta self-service (entró por el login, no es del roster de la Etapa 1)
+      selfJoin: p.sheet_alias?.startsWith('auth:') ?? false,
     }
   })
 

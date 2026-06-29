@@ -79,9 +79,12 @@ const patchSchema = z.object({
   openRounds: z.array(z.enum(ROUND_ORDER)).optional(),
   // "Desde hoy hacia adelante": null limpia la activación; string ISO la fija.
   bracketActivatedAt: z.string().nullable().optional(),
-}).refine((d) => d.openRounds !== undefined || d.bracketActivatedAt !== undefined, {
-  message: 'Nada que actualizar',
-})
+  // Minutos antes del kickoff en que se cierra el pronóstico (p.ej. 15).
+  deadlineMinutes: z.number().int().min(0).max(1440).optional(),
+}).refine(
+  (d) => d.openRounds !== undefined || d.bracketActivatedAt !== undefined || d.deadlineMinutes !== undefined,
+  { message: 'Nada que actualizar' },
+)
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -97,6 +100,7 @@ export async function PATCH(req: NextRequest) {
     const update: Record<string, unknown> = {}
     if (parsed.data.openRounds !== undefined) update.open_rounds = parsed.data.openRounds
     if (parsed.data.bracketActivatedAt !== undefined) update.bracket_activated_at = parsed.data.bracketActivatedAt
+    if (parsed.data.deadlineMinutes !== undefined) update.deadline_minutes = parsed.data.deadlineMinutes
 
     const { error } = await db
       .from('app_config')
