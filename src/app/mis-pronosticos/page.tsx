@@ -24,12 +24,17 @@ export default async function MisPronosticosPage() {
   if (!account) {
     return (
       <div className="max-w-md mx-auto py-12 text-center">
-        <p className="text-3xl mb-3">🔗</p>
-        <h1 className="text-xl font-bold text-[#e6edf3]">Cuenta creada — falta vincular</h1>
+        <p className="text-3xl mb-3">🎯</p>
+        <h1 className="text-xl font-bold text-[#e6edf3]">Únete a la Polla 2</h1>
         <p className="text-sm text-[#768390] mt-2">
-          Tu cuenta ya existe, pero aún no está asociada a tu participante de la polla.
-          El admin la vinculará pronto y podrás cargar tus pronósticos.
+          Tu cuenta ya existe. Únete al cuadro eliminatorio con un clic y empieza a armar tu bracket.
         </p>
+        <Link
+          href="/polla/eliminacion-2026"
+          className="inline-block mt-5 bg-[#9EE637] text-[#0d1117] font-bold text-sm px-5 py-3 rounded-lg hover:opacity-90 transition-opacity"
+        >
+          Unirme y armar mi cuadro →
+        </Link>
       </div>
     )
   }
