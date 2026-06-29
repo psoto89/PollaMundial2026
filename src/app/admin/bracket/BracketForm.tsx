@@ -90,6 +90,10 @@ export default function BracketForm({
       {/* Habilitar pronóstico por ronda */}
       <RoundsToggle initial={openRounds} />
 
+      {/* Crear los 16avos automáticamente desde las posiciones de grupos */}
+      <SeedR32 />
+
+
       {/* Crear partido */}
       <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 space-y-3">
         <h2 className="text-sm font-semibold text-[#e6edf3]">Nuevo partido</h2>
@@ -193,6 +197,54 @@ export default function BracketForm({
             ))}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/** Crea los 16 partidos de 16avos automáticamente desde las posiciones de grupos. */
+function SeedR32() {
+  const router = useRouter()
+  const [status, setStatus] = useState<'idle' | 'saving'>('idle')
+  const [msg, setMsg] = useState('')
+
+  async function seed() {
+    setStatus('saving'); setMsg('')
+    try {
+      const res = await fetch('/api/admin/bracket/seed', { method: 'POST' })
+      const data = await res.json()
+      if (res.ok) {
+        setMsg(`✅ ${data.created} creados · ${data.skipped} ya existían${data.missing?.length ? ` · ${data.missing.length} sin equipos aún` : ''}`)
+        router.refresh()
+      } else {
+        setMsg(`❌ ${data.error ?? 'Error'}`)
+      }
+    } catch {
+      setMsg('❌ Error de red')
+    } finally {
+      setStatus('idle')
+    }
+  }
+
+  return (
+    <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 space-y-3">
+      <div>
+        <h2 className="text-sm font-semibold text-[#e6edf3]">Crear 16avos automáticamente</h2>
+        <p className="text-xs text-[#768390] mt-1">
+          Arma los 16 partidos de la primera ronda con los 1º/2º de cada grupo y los 8 mejores
+          terceros (según las posiciones actuales). Salta los que ya existan. Ajusta kickoffs/equipos
+          luego si hace falta.
+        </p>
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={seed}
+          disabled={status === 'saving'}
+          className="text-sm font-semibold px-4 py-2 rounded-md bg-[#9EE637] text-[#0d1117] disabled:opacity-50"
+        >
+          {status === 'saving' ? 'Creando…' : 'Crear 16avos'}
+        </button>
+        {msg && <span className="text-xs text-[#768390]">{msg}</span>}
       </div>
     </div>
   )
