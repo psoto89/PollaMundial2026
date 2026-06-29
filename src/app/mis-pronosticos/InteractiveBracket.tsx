@@ -48,6 +48,20 @@ function fmtClose(iso: string): string {
   })
 }
 
+/** Cuenta regresiva legible hasta el cierre. */
+function countdown(ms: number): string {
+  if (ms <= 0) return 'cerrado'
+  const totalSec = Math.floor(ms / 1000)
+  const d = Math.floor(totalSec / 86400)
+  const h = Math.floor((totalSec % 86400) / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
 // ─── Componente principal ─────────────────────────────────────
 
 export default function InteractiveBracket({
@@ -89,7 +103,7 @@ export default function InteractiveBracket({
 
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30_000)
+    const id = setInterval(() => setNow(Date.now()), 1_000) // tic cada segundo (cuenta regresiva)
     return () => clearInterval(id)
   }, [])
 
@@ -299,17 +313,19 @@ function SlotCard({
       )}
 
       <div className="flex items-center justify-between gap-2 mt-2">
-        <span className="text-[10px] text-[#768390] truncate">
+        <span className="text-[10px] truncate">
           {finished && hasResult ? (
             <span className="text-[#58a6ff]">Final · {real!.golesLocal}–{real!.golesVisitante}</span>
           ) : live && hasResult ? (
             <span className="text-[#f85149]">🔴 {real!.golesLocal}–{real!.golesVisitante}</span>
           ) : editable && deadlineMs !== null ? (
-            <>Cierra {fmtClose(new Date(deadlineMs).toISOString())}</>
+            <span className={deadlineMs - now < 3_600_000 ? 'text-[#f0a35e] font-semibold' : 'text-[#9EE637] font-medium'}>
+              ⏱ Cierra en {countdown(deadlineMs - now)}
+            </span>
           ) : !roundOpen ? (
-            'Ronda aún cerrada'
+            <span className="text-[#768390]">Ronda aún cerrada</span>
           ) : real?.kickoffAt ? (
-            <>Inicio {fmtClose(real.kickoffAt)}</>
+            <span className="text-[#768390]">Inicio {fmtClose(real.kickoffAt)}</span>
           ) : null}
         </span>
         {editable && (
