@@ -34,10 +34,11 @@ const OFFICIAL_R32: { slot: string; local: string; visitante: string }[] = [
   { slot: 'R32-16', local: 'Colombia', visitante: 'Burkina Faso' },
 ]
 
-// Alias por si la tabla teams usa otro nombre
+// Alias: nombre oficial (normalizado) → posibles nombres en la tabla teams
 const ALIASES: Record<string, string[]> = {
   'usa': ['estados unidos', 'estados unidos de america', 'eeuu'],
-  'costa de marfil': ['cote divoire', 'marfil', 'costa marfil'],
+  'costa de marfil': ['costa de m', 'cote divoire', 'marfil', 'costa marfil'],
+  'argelia': ['algeria'],
   'paises bajos': ['holanda', 'netherlands'],
   'congo': ['rd congo', 'republica democratica del congo', 'congo rd'],
   'cabo verde': ['cape verde'],
@@ -74,18 +75,17 @@ export async function POST(req: NextRequest) {
       return null
     }
 
-    // Validar que todos los equipos existan antes de tocar nada
-    const unmatched: string[] = []
+    // Resolver equipos; los slots con algún equipo faltante se saltan (tolerante)
+    const unmatched = new Set<string>()
     const resolved = OFFICIAL_R32.map((m) => {
       const localId = resolve(m.local)
       const visitanteId = resolve(m.visitante)
-      if (!localId) unmatched.push(m.local)
-      if (!visitanteId) unmatched.push(m.visitante)
+      if (!localId) unmatched.add(m.local)
+      if (!visitanteId) unmatched.add(m.visitante)
       return { ...m, localId, visitanteId }
     })
-    if (unmatched.length > 0) {
-      return NextResponse.json({ error: 'Equipos sin match en la BD', unmatched }, { status: 400 })
-    }
+    const ready = resolved.filter((m) => m.localId && m.visitanteId)
+    const skipped = resolved.filter((m) => !m.localId || !m.visitanteId).map((m) => m.slot)
 
     // Reemplazar: borrar todos los partidos de eliminación previos
     await db.from('matches').delete().neq('fase', 'grupos')
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
     const nowMs = Date.now()
     const futureBase = nowMs + 2 * 24 * 60 * 60 * 1000
 
-    const rows = resolved.map((m, i) => {
+    const rows = ready.map((m, i) => {
       const isCanada = m.slot === 'R32-03'
       return {
         fase: 'dieciseisavos',
