@@ -37,9 +37,21 @@ export interface Match {
   kickoff_at: string | null
   external_id: string | null
   bracket_slot: string | null // posición en la plantilla de eliminación (ver config/bracket2026.ts)
+  advancer_team_id: string | null // equipo que clasificó (90' + ET/penales) — oficial
   // joins
   equipo_local?: Team
   equipo_visitante?: Team
+}
+
+// Pick del cuadro eliminatorio (Polla 2): a quién avanza + marcador 90' por slot.
+export interface PredictionBracket {
+  id: string
+  participant_id: string
+  slot: string // 'R32-01'..'F','3P' (config/bracket2026.ts)
+  advancer_team_id: string | null
+  pred_local: number | null
+  pred_visitante: number | null
+  updated_at: string
 }
 
 export interface PredictionGroup {
@@ -90,6 +102,11 @@ export interface ScoresCache {
   total_qf: number
   total_sf: number
   total_final: number
+  // Bonos de cuadro (Polla 2 reconvertida). total_eliminacion = Σ(rondas) + Σ(bonos).
+  total_bono_octavos: number  // 1 × clasificados a 8vos (máx 16)
+  total_bono_cuartos: number  // 2 × clasificados a cuartos (máx 16)
+  total_bono_semis: number    // 5 × semifinalistas (máx 20)
+  total_bono_finales: number  // campeón 25 + subcampeón 15 + tercero 10
   total_clasificados: number
   total_semis: number
   total_preguntas: number
@@ -126,6 +143,24 @@ export interface DesgloseSemis {
 export interface DesglosePreguntas {
   acertadas: number     // 0–6
   total: number         // acertadas × 7
+}
+
+// Polla 2 (bracket): puntos por partido de eliminación.
+export interface DesgloseKnockout {
+  marcador: number      // 5 (exacto) | 2 (signo 90') | 0
+  clasificado: number   // 2 si el equipo que avanza coincide, si no 0
+  total: number
+}
+
+// Polla 2 (bracket): bonos de cuadro.
+export interface DesgloseBonos {
+  octavos: number       // 1 × aciertos (máx 16)
+  cuartos: number       // 2 × aciertos (máx 16)
+  semis: number         // 5 × aciertos (máx 20)
+  campeon: number       // 0 | 25
+  subcampeon: number    // 0 | 15
+  tercero: number       // 0 | 10
+  total: number
 }
 
 export interface Totales {

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import LeaderboardTable from '@/components/leaderboard/LeaderboardTable'
 import TeamFlag from '@/components/ui/TeamFlag'
 import { loadLeaderboardData } from '@/lib/leaderboardData'
+import { getBracketMemberIds } from '@/lib/pollaMembers'
 import { ROUND_LABELS, type RoundKey } from '@/config/bracket2026'
 import Link from 'next/link'
 
@@ -20,6 +21,8 @@ interface ElimRow {
 export default async function EliminacionPage() {
   const supabase = await createClient()
   const { scores, liveMatches, livePreds, groupMatches, teams, qualifyPreds } = await loadLeaderboardData()
+  // Solo los que entraron por invitación a la Polla 2 (tienen picks de bracket)
+  const memberIds = await getBracketMemberIds()
 
   const { data: elimRaw } = await supabase
     .from('matches')
@@ -39,8 +42,8 @@ export default async function EliminacionPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight">🏆 Polla 2 · Eliminación</h1>
-          <p className="text-sm text-[#768390] mt-1">Posiciones por marcadores de dieciseisavos a la final</p>
+          <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight">🏆 Polla 2 · Cuadro Eliminatorio</h1>
+          <p className="text-sm text-[#768390] mt-1">Marcador 90′ + quién avanza · bonos de cuadro · de 16avos a la final</p>
         </div>
         <Link href="/" className="text-xs text-[#768390] hover:text-[#9EE637]">← Inicio</Link>
       </div>
@@ -53,14 +56,18 @@ export default async function EliminacionPage() {
         groupMatches={groupMatches}
         teams={teams}
         qualifyPreds={qualifyPreds}
+        memberIds={memberIds}
       />
 
       <Link
-        href="/mis-pronosticos"
-        className="block text-center bg-[#161b22] border border-[#30363d] rounded-xl p-4 hover:border-[#9EE637]/40 transition-colors"
+        href="/polla/eliminacion-2026"
+        className="block text-center bg-[#9EE637] rounded-xl p-4 hover:opacity-90 transition-opacity"
       >
-        <span className="text-sm font-medium text-[#9EE637]">Cargar / modificar mis pronósticos de eliminación →</span>
+        <span className="text-sm font-bold text-[#0d1117]">🎯 Únete con tu correo y arma tu cuadro →</span>
       </Link>
+      <p className="text-center text-xs text-[#768390] -mt-3">
+        Si no tienes cuenta, te pedimos tu correo y te llega un enlace mágico para entrar.
+      </p>
 
       {elim.length > 0 && (
         <div>

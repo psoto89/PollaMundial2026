@@ -4,6 +4,8 @@
  * Los valores reflejan src/lib/scoring.ts — mantener sincronizado si cambian.
  */
 
+import { POLLA2_PUBLIC } from '@/config/features'
+
 interface Rule {
   label: string
   pts: string
@@ -16,21 +18,21 @@ interface Section {
 
 const SECTIONS: Section[] = [
   {
-    titulo: 'Partidos (grupos y eliminación)',
+    titulo: 'Polla 1 · Partidos de grupos',
     reglas: [
       { label: 'Aciertas el resultado (1/X/2)', pts: '+2' },
       { label: 'Aciertas el marcador exacto', pts: '+5' },
     ],
   },
   {
-    titulo: 'Clasificados',
+    titulo: 'Polla 1 · Clasificados',
     reglas: [
       { label: 'Equipo clasificado (1º, 2º o mejor tercero)', pts: '+4' },
       { label: 'Además aciertas la posición exacta (1º/2º)', pts: '+4' },
     ],
   },
   {
-    titulo: 'Puestos finales',
+    titulo: 'Polla 1 · Puestos finales',
     reglas: [
       { label: 'Equipo entre los 4 semifinalistas', pts: '+10' },
       { label: 'Bonus campeón exacto', pts: '+20' },
@@ -40,8 +42,27 @@ const SECTIONS: Section[] = [
     ],
   },
   {
-    titulo: 'Preguntas',
+    titulo: 'Polla 1 · Preguntas',
     reglas: [{ label: 'Cada respuesta acertada', pts: '+7' }],
+  },
+  {
+    titulo: 'Polla 2 · Cuadro — por partido',
+    reglas: [
+      { label: 'Marcador exacto de 90′ (ya incluye el signo)', pts: '+5' },
+      { label: 'Solo el signo de 90′ (gana o empata)', pts: '+2' },
+      { label: 'Aciertas el equipo que clasifica', pts: '+2' },
+    ],
+  },
+  {
+    titulo: 'Polla 2 · Cuadro — bonos',
+    reglas: [
+      { label: 'Cada clasificado a 8vos (máx 16)', pts: '+1' },
+      { label: 'Cada clasificado a cuartos (máx 16)', pts: '+2' },
+      { label: 'Cada semifinalista (máx 20)', pts: '+5' },
+      { label: 'Campeón', pts: '+25' },
+      { label: 'Subcampeón', pts: '+15' },
+      { label: 'Tercer puesto', pts: '+10' },
+    ],
   },
 ]
 
@@ -53,7 +74,7 @@ export default function ScoringLegend() {
         <span className="text-xs text-[#768390] ml-auto group-open:rotate-90 transition-transform">▸</span>
       </summary>
       <div className="px-4 pb-4 pt-1 space-y-4 border-t border-[#21262d]">
-        {SECTIONS.map((section) => (
+        {SECTIONS.filter((s) => POLLA2_PUBLIC || !s.titulo.startsWith('Polla 2')).map((section) => (
           <div key={section.titulo}>
             <p className="text-xs font-semibold text-[#768390] uppercase tracking-wide mt-3 mb-1.5">
               {section.titulo}

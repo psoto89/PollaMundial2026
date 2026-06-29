@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { scoreGroupMatch, scoreQualify, type QualifyPred, type QualifyOfficial } from '@/lib/scoring'
 import { computeGroupStandings } from '@/lib/standings'
+import { POLLA2_PUBLIC } from '@/config/features'
 
 export type LeaderboardScope = 'general' | 'grupos' | 'eliminacion'
 
@@ -18,6 +19,10 @@ interface ScoreRow {
   total_qf: number
   total_sf: number
   total_final: number
+  total_bono_octavos: number
+  total_bono_cuartos: number
+  total_bono_semis: number
+  total_bono_finales: number
   total_clasificados: number
   total_semis: number
   total_preguntas: number
@@ -74,6 +79,36 @@ interface Props {
   groupMatches?: GroupMatchLite[]
   teams?: TeamLite[]
   qualifyPreds?: QualifyPredLite[]
+  /** Solo para scope 'eliminacion': ids de los miembros de la Polla 2 (entraron por invitación). */
+  memberIds?: string[]
+}
+
+/**
+ * Filtra las filas según la polla:
+ *  - eliminacion: solo miembros de la Polla 2 (los que entraron por invitación y juegan el cuadro).
+ *  - grupos: solo el roster original (no cuentas self-service 'auth:%').
+ *  - general: todos.
+ */
+function filterByScope(rows: ScoreRow[], scope: LeaderboardScope, memberSet: Set<string> | null): ScoreRow[] {
+  if (scope === 'eliminacion') {
+    if (!memberSet) return rows
+    return rows.filter((r) => memberSet.has(r.participant_id))
+  }
+  if (scope === 'grupos') {
+    return rows.filter((r) => {
+      const alias = r.participants?.sheet_alias
+      return !!alias && !alias.startsWith('auth:')
+    })
+  }
+  // General: todos. Pero mientras la Polla 2 está oculta, no exponer las cuentas
+  // self-service de prueba (sheet_alias 'auth:%').
+  if (!POLLA2_PUBLIC) {
+    return rows.filter((r) => {
+      const alias = r.participants?.sheet_alias
+      return !alias || !alias.startsWith('auth:')
+    })
+  }
+  return rows
 }
 
 // Mapeo fase real → bucket de ronda (para tentativo en vivo y chips)
@@ -116,12 +151,17 @@ function buildBuckets(
   clasifLive: number,
 ): Bucket[] {
   if (scope === 'eliminacion') {
+    // Puntos por partido (5/2 + clasificado 2) por ronda + bonos de cuadro.
     return [
       { key: 'r32', label: 'R32', value: row.total_r32, live: live.r32 },
       { key: 'r16', label: 'R16', value: row.total_r16, live: live.r16 },
       { key: 'qf', label: 'QF', value: row.total_qf, live: live.qf },
       { key: 'sf', label: 'SF', value: row.total_sf, live: live.sf },
       { key: 'final', label: 'Final', value: row.total_final, live: live.final },
+      { key: 'b8', label: 'Clas 8vos', value: row.total_bono_octavos, live: 0 },
+      { key: 'b4', label: 'Clas 4tos', value: row.total_bono_cuartos, live: 0 },
+      { key: 'bsf', label: 'Semifin.', value: row.total_bono_semis, live: 0 },
+      { key: 'bfin', label: 'Podio', value: row.total_bono_finales, live: 0 },
     ]
   }
   if (scope === 'grupos') {
@@ -149,8 +189,10 @@ export default function LeaderboardTable({
   groupMatches = [],
   teams = [],
   qualifyPreds = [],
+  memberIds,
 }: Props) {
-  const [scores, setScores] = useState<ScoreRow[]>(initialScores)
+  const memberSet = useMemo(() => (memberIds ? new Set(memberIds) : null), [memberIds])
+  const [scores, setScores] = useState<ScoreRow[]>(() => filterByScope(initialScores, scope, memberIds ? new Set(memberIds) : null))
   const [liveMatches, setLiveMatches] = useState<LiveMatchLite[]>(initialLiveMatches)
   const [livePreds, setLivePreds] = useState<LivePred[]>(initialLivePreds)
   const prevRanks = useRef<Map<string, number>>(new Map())
@@ -296,7 +338,7 @@ export default function LeaderboardTable({
         .from('scores_cache')
         .select('*, participants(id, nombre, sheet_alias, avatar_url)')
         .order('total', { ascending: false })
-      if (data) setScores(data as unknown as ScoreRow[])
+      if (data) setScores(filterByScope(data as unknown as ScoreRow[], scope, memberSet))
     }
 
     async function refetchLive() {
@@ -340,13 +382,17 @@ export default function LeaderboardTable({
       supabase.removeChannel(channel)
       clearInterval(interval)
     }
-  }, [])
+  }, [scope, memberSet])
 
   if (scores.length === 0) {
     return (
       <div className="text-center py-16 text-[#768390]">
         <p className="text-4xl mb-3">⚽</p>
-        <p>Sin datos aún. El admin debe importar los pronósticos.</p>
+        <p>
+          {scope === 'eliminacion'
+            ? 'Aún nadie se ha unido al cuadro. Comparte el link de invitación para empezar.'
+            : 'Sin datos aún. El admin debe importar los pronósticos.'}
+        </p>
       </div>
     )
   }

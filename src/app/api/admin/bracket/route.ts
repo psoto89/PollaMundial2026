@@ -76,7 +76,11 @@ export async function POST(req: NextRequest) {
 }
 
 const patchSchema = z.object({
-  openRounds: z.array(z.enum(ROUND_ORDER)),
+  openRounds: z.array(z.enum(ROUND_ORDER)).optional(),
+  // "Desde hoy hacia adelante": null limpia la activación; string ISO la fija.
+  bracketActivatedAt: z.string().nullable().optional(),
+}).refine((d) => d.openRounds !== undefined || d.bracketActivatedAt !== undefined, {
+  message: 'Nada que actualizar',
 })
 
 export async function PATCH(req: NextRequest) {
@@ -90,16 +94,20 @@ export async function PATCH(req: NextRequest) {
     }
     const db = createAdminClient()
 
+    const update: Record<string, unknown> = {}
+    if (parsed.data.openRounds !== undefined) update.open_rounds = parsed.data.openRounds
+    if (parsed.data.bracketActivatedAt !== undefined) update.bracket_activated_at = parsed.data.bracketActivatedAt
+
     const { error } = await db
       .from('app_config')
-      .update({ open_rounds: parsed.data.openRounds })
+      .update(update)
       .eq('id', 1)
 
     if (error) {
       return NextResponse.json({ error: `No se pudo guardar: ${error.message}` }, { status: 400 })
     }
 
-    return NextResponse.json({ ok: true, openRounds: parsed.data.openRounds })
+    return NextResponse.json({ ok: true, ...update })
   } catch (error) {
     console.error('[PATCH /api/admin/bracket]', error)
     return NextResponse.json({ error: String(error) }, { status: 500 })

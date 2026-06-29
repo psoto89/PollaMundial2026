@@ -88,13 +88,36 @@ function parseScore(s: string | null | undefined): number | null {
 }
 
 type OurMatch = {
-  id:              string
-  external_id:     string | null
-  goles_local:     number | null
-  goles_visitante: number | null
-  estado:          string
-  last_source:     string | null
-  last_source_at:  string | null
+  id:                  string
+  external_id:         string | null
+  fase:                string
+  equipo_local_id:     string | null
+  equipo_visitante_id: string | null
+  goles_local:         number | null
+  goles_visitante:     number | null
+  estado:              string
+  last_source:         string | null
+  last_source_at:      string | null
+}
+
+/**
+ * Clasificado automático de un partido de eliminación a partir del marcador.
+ * Si hay un ganador en los 90′ → ese equipo avanza. Si es empate (se define por
+ * penales), devuelve null: en ese caso el admin elige el clasificado a mano en
+ * /admin/results (es el único caso que la API no puede resolver). Grupos → null.
+ */
+function knockoutAdvancer(
+  fase: string,
+  orientedLocal: number | null,
+  orientedVisitante: number | null,
+  localId: string | null,
+  visitanteId: string | null,
+): string | null {
+  if (fase === 'grupos') return null
+  if (orientedLocal === null || orientedVisitante === null) return null
+  if (orientedLocal > orientedVisitante) return localId
+  if (orientedVisitante > orientedLocal) return visitanteId
+  return null
 }
 
 function isManualLocked(m: OurMatch): boolean {
@@ -149,7 +172,8 @@ export async function syncSchedule(): Promise<SyncResult> {
     const { data: rawMatches } = await db
       .from('matches')
       .select(`
-        id, external_id, goles_local, goles_visitante, estado, last_source, last_source_at,
+        id, external_id, fase, equipo_local_id, equipo_visitante_id,
+        goles_local, goles_visitante, estado, last_source, last_source_at,
         equipo_local:teams!equipo_local_id(nombre),
         equipo_visitante:teams!equipo_visitante_id(nombre)
       `)
@@ -223,6 +247,16 @@ export async function syncSchedule(): Promise<SyncResult> {
       if (oriented.goles_local !== null)     update['goles_local']     = oriented.goles_local
       if (oriented.goles_visitante !== null) update['goles_visitante'] = oriented.goles_visitante
 
+      // Clasificado automático al finalizar un partido de eliminación con ganador
+      // en los 90′. Empate (penales) → no se toca: lo define el admin a mano.
+      if (nowFinished) {
+        const adv = knockoutAdvancer(
+          our.fase, oriented.goles_local, oriented.goles_visitante,
+          our.equipo_local_id, our.equipo_visitante_id,
+        )
+        if (adv) update['advancer_team_id'] = adv
+      }
+
       const { error } = await db.from('matches').update(update).eq('id', our.id)
       if (error) {
         result.errors.push(`${our.id}: ${error.message}`)
@@ -266,7 +300,8 @@ export async function syncLive(): Promise<SyncResult> {
     const { data: rawMatches } = await db
       .from('matches')
       .select(`
-        id, external_id, goles_local, goles_visitante, estado, last_source, last_source_at,
+        id, external_id, fase, equipo_local_id, equipo_visitante_id,
+        goles_local, goles_visitante, estado, last_source, last_source_at,
         equipo_local:teams!equipo_local_id(nombre),
         equipo_visitante:teams!equipo_visitante_id(nombre)
       `)
@@ -312,6 +347,15 @@ export async function syncLive(): Promise<SyncResult> {
       if (oriented.goles_local !== null)     update['goles_local']     = oriented.goles_local
       if (oriented.goles_visitante !== null) update['goles_visitante'] = oriented.goles_visitante
       if (minuto !== null)                   update['minuto']          = minuto
+
+      // Clasificado automático al finalizar eliminación con ganador en 90′
+      if (nowFinished) {
+        const adv = knockoutAdvancer(
+          our.fase, oriented.goles_local, oriented.goles_visitante,
+          our.equipo_local_id, our.equipo_visitante_id,
+        )
+        if (adv) update['advancer_team_id'] = adv
+      }
 
       const { error } = await db.from('matches').update(update).eq('id', our.id)
       if (error) {

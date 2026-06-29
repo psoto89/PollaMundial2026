@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import LiveBanner from '@/components/live/LiveBanner'
 import Link from 'next/link'
+import { POLLA2_PUBLIC } from '@/config/features'
 
 export const revalidate = 30
 
@@ -37,10 +38,12 @@ export default async function Home() {
 
       <div className="text-center pt-2">
         <h1 className="text-2xl font-bold text-[#e6edf3] tracking-tight">Gran Polla Mundial 2026</h1>
-        <p className="text-sm text-[#768390] mt-1">{participantes ?? 0} participantes · elige una polla</p>
+        <p className="text-sm text-[#768390] mt-1">
+          {participantes ?? 0} participantes{POLLA2_PUBLIC ? ' · elige una polla' : ''}
+        </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className={`grid gap-4 ${POLLA2_PUBLIC ? 'sm:grid-cols-2' : 'max-w-md mx-auto'}`}>
         <PollaCard
           href="/grupos"
           emoji="⚽"
@@ -49,14 +52,16 @@ export default async function Home() {
           desc="Tabla por aciertos de los 72 partidos de grupos."
           accent="#9EE637"
         />
-        <PollaCard
-          href="/eliminacion"
-          emoji="🏆"
-          titulo="Polla 2"
-          subtitulo="Octavos a la Final"
-          desc="Marcadores de eliminación, editables hasta 1h antes de cada partido."
-          accent="#58a6ff"
-        />
+        {POLLA2_PUBLIC && (
+          <PollaCard
+            href="/eliminacion"
+            emoji="🏆"
+            titulo="Polla 2"
+            subtitulo="Cuadro Eliminatorio"
+            desc="Arma tu bracket: elige quién avanza y el marcador. Bonos por clasificados, semifinalistas y podio."
+            accent="#58a6ff"
+          />
+        )}
       </div>
 
       <div className="flex items-center justify-center gap-4 text-sm">
@@ -64,10 +69,14 @@ export default async function Home() {
           Tabla general
         </Link>
         <span className="text-[#30363d]">·</span>
-        <Link href="/mis-pronosticos" className="text-[#9EE637] font-medium hover:underline">
-          Mi Polla
-        </Link>
-        <span className="text-[#30363d]">·</span>
+        {POLLA2_PUBLIC && (
+          <>
+            <Link href="/mis-pronosticos" className="text-[#9EE637] font-medium hover:underline">
+              Mi Polla
+            </Link>
+            <span className="text-[#30363d]">·</span>
+          </>
+        )}
         <Link href="/reglas" className="text-[#768390] hover:text-[#9EE637] transition-colors">
           Reglas
         </Link>

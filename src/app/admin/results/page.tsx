@@ -5,12 +5,17 @@ import { createClient } from '@/lib/supabase/client'
 
 interface Match {
   id: string
+  fase: string
   grupo: string | null
   match_index: number
+  bracket_slot: string | null
   goles_local: number | null
   goles_visitante: number | null
   estado: string
   minuto: number | null
+  equipo_local_id: string | null
+  equipo_visitante_id: string | null
+  advancer_team_id: string | null
   equipo_local: { nombre: string } | null
   equipo_visitante: { nombre: string } | null
 }
@@ -44,11 +49,11 @@ export default function AdminResultsPage() {
     const { data } = await supabase
       .from('matches')
       .select(`
-        id, grupo, match_index, goles_local, goles_visitante, estado, minuto,
+        id, fase, grupo, match_index, bracket_slot, goles_local, goles_visitante, estado, minuto,
+        equipo_local_id, equipo_visitante_id, advancer_team_id,
         equipo_local:teams!equipo_local_id(nombre),
         equipo_visitante:teams!equipo_visitante_id(nombre)
       `)
-      .eq('fase', 'grupos')
       .order('match_index')
     setMatches((data ?? []) as unknown as Match[])
     setLoading(false)
@@ -59,7 +64,8 @@ export default function AdminResultsPage() {
     golesLocal: number | null,
     golesVisitante: number | null,
     estado: string,
-    minuto?: number | null,
+    minuto: number | null,
+    advancerTeamId: string | null | undefined,
   ) {
     setSaving(matchId)
     setMessage('')
@@ -73,6 +79,8 @@ export default function AdminResultsPage() {
         golesVisitante,
         estado,
         minuto: minuto ?? null,
+        // Solo enviar el clasificado en partidos de eliminación
+        ...(advancerTeamId !== undefined ? { advancerTeamId } : {}),
       }),
     })
     const data = await res.json()
@@ -130,10 +138,15 @@ export default function AdminResultsPage() {
     setRecalcLoading(false)
   }
 
-  const grupos = ['todos', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
-  const filteredMatches = filterGrupo === 'todos'
-    ? matches
-    : matches.filter((m) => m.grupo === filterGrupo)
+  const grupos = ['todos', 'eliminacion', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
+  const gruposCount = matches.filter((m) => m.fase === 'grupos').length
+  const elimCount = matches.filter((m) => m.fase !== 'grupos').length
+  const filteredMatches =
+    filterGrupo === 'todos'
+      ? matches.filter((m) => m.fase === 'grupos')
+      : filterGrupo === 'eliminacion'
+        ? matches.filter((m) => m.fase !== 'grupos')
+        : matches.filter((m) => m.grupo === filterGrupo)
 
   if (loading) {
     return <div className="text-[#768390] text-sm py-8">Cargando partidos…</div>
@@ -144,7 +157,7 @@ export default function AdminResultsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-[#e6edf3]">Cargar resultados</h1>
-          <p className="text-sm text-[#768390] mt-0.5">{matches.length} partidos de grupos</p>
+          <p className="text-sm text-[#768390] mt-0.5">{gruposCount} de grupos · {elimCount} de eliminación</p>
         </div>
         <button
           onClick={handleRecalc}
@@ -202,7 +215,7 @@ export default function AdminResultsPage() {
                 : 'bg-[#21262d] text-[#768390] hover:text-[#e6edf3]'
             }`}
           >
-            {g === 'todos' ? 'Todos' : `Grupo ${g}`}
+            {g === 'todos' ? 'Grupos' : g === 'eliminacion' ? '🏆 Eliminación' : `Grupo ${g}`}
           </button>
         ))}
       </div>
@@ -230,14 +243,17 @@ export default function AdminResultsPage() {
 interface MatchResultRowProps {
   match: Match
   saving: boolean
-  onSave: (id: string, gl: number | null, gv: number | null, estado: string, minuto?: number | null) => void
+  onSave: (id: string, gl: number | null, gv: number | null, estado: string, minuto: number | null, advancerTeamId: string | null | undefined) => void
 }
 
 function MatchResultRow({ match, saving, onSave }: MatchResultRowProps) {
+  const isKnockout = match.fase !== 'grupos'
   const [golesLocal, setGolesLocal] = useState<string>(match.goles_local?.toString() ?? '')
   const [golesVisitante, setGolesVisitante] = useState<string>(match.goles_visitante?.toString() ?? '')
   const [estado, setEstado] = useState(match.estado)
   const [minuto, setMinuto] = useState<string>(match.minuto?.toString() ?? '')
+  // Clasificado (solo eliminación): '' = sin definir
+  const [advancer, setAdvancer] = useState<string>(match.advancer_team_id ?? '')
 
   const estadoColors: Record<string, string> = {
     scheduled: 'text-[#768390]',
@@ -249,13 +265,17 @@ function MatchResultRow({ match, saving, onSave }: MatchResultRowProps) {
     const gl = golesLocal !== '' ? parseInt(golesLocal, 10) : null
     const gv = golesVisitante !== '' ? parseInt(golesVisitante, 10) : null
     const min = minuto !== '' ? parseInt(minuto, 10) : null
-    onSave(match.id, gl, gv, estado, min)
+    // En grupos no se envía el campo (undefined); en eliminación, '' → null
+    const adv = isKnockout ? (advancer === '' ? null : advancer) : undefined
+    onSave(match.id, gl, gv, estado, min, adv)
   }
 
   return (
     <div className="bg-[#161b22] border border-[#30363d] rounded-lg px-4 py-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs text-[#768390] font-mono">G{match.grupo} #{match.match_index}</span>
+        <span className="text-xs text-[#768390] font-mono">
+          {isKnockout ? (match.bracket_slot ?? 'KO') : `G${match.grupo}`} #{match.match_index}
+        </span>
         <span className={`text-xs font-semibold ml-auto ${estadoColors[match.estado] ?? ''}`}>
           {match.estado.toUpperCase()}
         </span>
@@ -320,6 +340,27 @@ function MatchResultRow({ match, saving, onSave }: MatchResultRowProps) {
           {saving ? '…' : 'Guardar'}
         </button>
       </div>
+
+      {/* Clasificado (solo eliminación): el marcador es de 90'; el avance puede
+          definirse por ET/penales y se guarda aparte. */}
+      {isKnockout && (
+        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[#21262d]">
+          <span className="text-xs text-[#768390] shrink-0" title="Se llena solo si hay ganador en 90′. Úsalo solo para definir penales (empate).">Clasifica:</span>
+          <select
+            value={advancer}
+            onChange={(e) => setAdvancer(e.target.value)}
+            className="flex-1 py-1 px-2 rounded bg-[#21262d] border border-[#30363d] text-xs text-[#e6edf3] focus:outline-none focus:border-[#9EE637]"
+          >
+            <option value="">— sin definir —</option>
+            {match.equipo_local_id && (
+              <option value={match.equipo_local_id}>{match.equipo_local?.nombre ?? 'Local'}</option>
+            )}
+            {match.equipo_visitante_id && (
+              <option value={match.equipo_visitante_id}>{match.equipo_visitante?.nombre ?? 'Visitante'}</option>
+            )}
+          </select>
+        </div>
+      )}
     </div>
   )
 }
