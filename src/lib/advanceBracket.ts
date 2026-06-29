@@ -84,5 +84,17 @@ export async function advanceBracket(db: Client): Promise<{ created: string[] }>
     }
   }
 
+  // Abrir automáticamente para pronóstico las rondas recién creadas (modelo
+  // ronda-por-ronda: apenas se cierra una ronda, se crea y se abre la siguiente).
+  if (created.length > 0) {
+    const roundsCreados = new Set(
+      created.map((slot) => BRACKET_2026.find((s) => s.slot === slot)?.round).filter(Boolean) as RoundKey[],
+    )
+    const { data: cfg } = await db.from('app_config').select('open_rounds').eq('id', 1).single()
+    const open = new Set<string>((cfg?.open_rounds as string[] | null) ?? [])
+    for (const r of roundsCreados) open.add(r)
+    await db.from('app_config').update({ open_rounds: [...open] }).eq('id', 1)
+  }
+
   return { created }
 }
