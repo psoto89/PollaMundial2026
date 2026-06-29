@@ -248,7 +248,12 @@ function buildBracketPicks(
   const campeon = advBySlot.get('F') ?? null
   const tercero = advBySlot.get('3P') ?? null
   const finalistas = [advBySlot.get('SF-1'), advBySlot.get('SF-2')].filter(Boolean) as string[]
-  const subcampeon = finalistas.find((t) => t !== campeon) ?? null
+  // El subcampeón solo se puede inferir si el usuario eligió campeón Y ese campeón es
+  // uno de sus dos finalistas. Si no, queda null (evita acreditar +15 sin pronosticar la final).
+  const subcampeon =
+    campeon && finalistas.includes(campeon)
+      ? finalistas.find((t) => t !== campeon) ?? null
+      : null
   return { octavos, cuartos, semis, campeon, subcampeon, tercero }
 }
 

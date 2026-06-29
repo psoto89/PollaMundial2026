@@ -101,9 +101,11 @@ export default function InteractiveBracket({
     return init
   })
 
-  const [now, setNow] = useState(() => Date.now())
+  // Inicia en 0 (evita desajuste SSR/hidratación); se fija al montar y tictac cada segundo.
+  const [now, setNow] = useState(0)
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1_000) // tic cada segundo (cuenta regresiva)
+    setNow(Date.now())
+    const id = setInterval(() => setNow(Date.now()), 1_000)
     return () => clearInterval(id)
   }, [])
 
@@ -113,6 +115,12 @@ export default function InteractiveBracket({
       return { ...prev, [slot]: { ...base, ...patch } }
     })
   }
+
+  // Ronda "activa" a expandir por defecto = la primera con un partido por jugarse.
+  const activeRound = ROUND_ORDER.find((r) => {
+    const rs = BRACKET_BY_ROUND.find((x) => x.round === r)?.slots ?? []
+    return rs.some((s) => realBySlot.get(s.slot)?.estado === 'scheduled')
+  })
 
   return (
     <div className="space-y-2.5">
@@ -135,6 +143,7 @@ export default function InteractiveBracket({
             items={withMatch}
             totalSlots={slots.length}
             hasMatches={hasMatches}
+            defaultOpen={round === activeRound}
             prevLabel={prevLabel}
             roundOpen={openRounds.includes(round)}
             now={now}
@@ -155,13 +164,14 @@ export default function InteractiveBracket({
 // ─── Sección de ronda (colapsable) ────────────────────────────
 
 function RoundSection({
-  round, items, totalSlots, hasMatches, prevLabel, roundOpen, now, deadlineMinutes,
+  round, items, totalSlots, hasMatches, defaultOpen, prevLabel, roundOpen, now, deadlineMinutes,
   bracketActivatedAt, picks, teamsById, countBySlot, totalParticipantes, onPick,
 }: {
   round: RoundKey
   items: { slotDef: BracketSlot; real: RealSlot | undefined }[]
   totalSlots: number
   hasMatches: boolean
+  defaultOpen: boolean
   prevLabel: string
   roundOpen: boolean
   now: number
@@ -173,8 +183,8 @@ function RoundSection({
   totalParticipantes: number
   onPick: (slot: string, patch: Partial<PickState>) => void
 }) {
-  // Abrir solo la primera ronda con partidos; las futuras (bloqueadas) colapsadas.
-  const [open, setOpen] = useState(hasMatches && round === 'dieciseisavos')
+  // Expande por defecto la ronda activa (la que tiene partidos por jugarse).
+  const [open, setOpen] = useState(defaultOpen)
 
   // Ronda futura sin partidos todavía → bloqueada
   if (!hasMatches) {
@@ -279,13 +289,21 @@ function SlotCard({
     if (r.ok) { setStatus('saved'); setMsg('Guardado ✓') }
     else { setStatus('error'); setMsg(r.error ?? 'Error') }
   }
-  function chooseWinner(teamId: string) {
+  // Tocar un equipo = marcarlo como que avanza (selección local; se persiste con Guardar).
+  function pickWinner(teamId: string) {
     if (!editable) return
     onPick(slot, { advancer: teamId })
-    void persist(teamId, pick?.local ?? '', pick?.visitante ?? '')
+    setStatus('idle'); setMsg('') // edición sin guardar → limpia el "Guardado ✓"
+  }
+  function setScore(side: 'local' | 'visitante', v: string) {
+    const clean = v.replace(/[^0-9]/g, '').slice(0, 2) // 0–99
+    onPick(slot, { [side]: clean })
+    setStatus('idle'); setMsg('')
   }
   function saveAll() {
-    void persist(pick?.advancer ?? null, pick?.local ?? '', pick?.visitante ?? '')
+    if (status === 'saving') return
+    // Persiste el avance VALIDADO (advancerId) + el marcador actual, en una sola escritura.
+    void persist(advancerId, pick?.local ?? '', pick?.visitante ?? '')
   }
 
   return (
@@ -300,12 +318,12 @@ function SlotCard({
           <TeamRow
             name={localName!} selected={advancerId === localId} editable={editable}
             score={pick?.local ?? ''} result={hasResult ? real!.golesLocal : null}
-            onPick={() => chooseWinner(localId!)} onScore={(v) => onPick(slot, { local: v })}
+            onPick={() => pickWinner(localId!)} onScore={(v) => setScore('local', v)}
           />
           <TeamRow
             name={visitanteName!} selected={advancerId === visitanteId} editable={editable}
             score={pick?.visitante ?? ''} result={hasResult ? real!.golesVisitante : null}
-            onPick={() => chooseWinner(visitanteId!)} onScore={(v) => onPick(slot, { visitante: v })}
+            onPick={() => pickWinner(visitanteId!)} onScore={(v) => setScore('visitante', v)}
           />
         </div>
       ) : (

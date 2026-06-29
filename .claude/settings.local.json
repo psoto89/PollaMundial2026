@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git fetch *)",
+      "Bash(git merge *)",
+      "Bash(npm test *)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"TSC_EXIT=$?\")",
+      "Bash(git stash *)",
+      "Bash(git checkout *)",
+      "Bash(npm run *)",
+      "Bash(git push *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "mcp__supabase__list_projects",
+      "mcp__vercel__list_teams",
+      "mcp__vercel__list_projects",
+      "mcp__vercel__get_project",
+      "Bash(curl -s \"https://mundial2026.altotrafico.co/\" -H \"User-Agent: Mozilla/5.0\" -o home.html)",
+      "Bash(curl -s \"https://mundial2026.altotrafico.co/participant/21242c7c-779e-4b8c-9554-0ac6ff62e385\" -H \"User-Agent: Mozilla/5.0\" -o part.html)",
+      "Bash(grep -oE 'Clasificados</h2>.{0,200}' part.html)",
+      "Bash(git commit -m 'feat\\(live\\): LiveBanner en tiempo real \\(realtime + fallback 30s\\) *)",
+      "Bash(git check-ignore *)",
+      "Bash(xargs ls -la)",
+      "Bash(echo \"--- tsc done \\(exit $?\\) ---\")",
+      "Bash(git commit -m 'fix\\(leaderboard\\): tabla cuadra en movil sin scroll lateral *)",
+      "Bash(grep -q \"^env.local$\" .gitignore)",
+      "Bash(npx next *)",
+      "Bash(git commit -m 'fix\\(security\\): rate-limit + timing-safe en login, gate publico en live/poll, ignora env.local *)",
+      "Bash(git commit -m 'fix\\(scoring\\): cron live, recalc eliminacion, mapeo equipos e import *)"
+    ]
+  }
+}

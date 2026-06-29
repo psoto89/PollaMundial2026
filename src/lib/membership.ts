@@ -35,21 +35,26 @@ export async function ensureMembership(authUserId: string, email: string | undef
     }
   }
 
-  // Crear participante self-service + cuenta vinculada
+  // Crear participante self-service + cuenta vinculada (idempotente para evitar
+  // huérfanos/duplicados en cargas concurrentes / doble clic del magic link).
   const nombre = email ? email.split('@')[0] : 'Participante'
+  const sheetAlias = `auth:${authUserId}` // único → upsert no duplica
   const { data: participant, error: pErr } = await db
     .from('participants')
-    .insert({ sheet_alias: `auth:${authUserId}`, nombre })
+    .upsert({ sheet_alias: sheetAlias, nombre }, { onConflict: 'sheet_alias' })
     .select('id')
     .single()
   if (pErr || !participant) throw new Error(`No se pudo crear participante: ${pErr?.message}`)
 
   const { error: aErr } = await db
     .from('participant_accounts')
-    .insert({
-      participant_id: participant.id,
-      email: email ?? `${authUserId}@noemail.local`,
-      auth_user_id: authUserId,
-    })
+    .upsert(
+      {
+        participant_id: participant.id,
+        email: email ?? `${authUserId}@noemail.local`,
+        auth_user_id: authUserId,
+      },
+      { onConflict: 'participant_id' },
+    )
   if (aErr) throw new Error(`No se pudo crear cuenta: ${aErr.message}`)
 }

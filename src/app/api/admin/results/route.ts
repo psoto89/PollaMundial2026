@@ -78,13 +78,28 @@ async function handleMatchResult(
     goles_visitante: data.golesVisitante,
     estado:          data.estado,
     minuto:          data.minuto ?? null,
-    kickoff_at:      data.kickoffAt ?? null,
     // Marcar que el último update fue manual → protege de sobrescritura por webhook
     last_source:     'manual',
     last_source_at:  new Date().toISOString(),
   }
+  // ⚠️ Solo tocar kickoff_at si el form lo envió. Escribirlo siempre lo ponía en NULL
+  // (el form no lo manda), y un kickoff NULL reabría el partido para pronóstico.
+  if (data.kickoffAt !== undefined) {
+    updateData.kickoff_at = data.kickoffAt
+  }
   // Solo tocar el clasificado si el form lo envió (evita borrarlo en ediciones parciales)
   if (data.advancerTeamId !== undefined) {
+    // Validar que el clasificado sea uno de los dos equipos del partido
+    if (data.advancerTeamId !== null) {
+      const { data: m } = await db
+        .from('matches')
+        .select('equipo_local_id, equipo_visitante_id')
+        .eq('id', data.matchId)
+        .single()
+      if (m && data.advancerTeamId !== m.equipo_local_id && data.advancerTeamId !== m.equipo_visitante_id) {
+        return NextResponse.json({ error: 'El clasificado no es uno de los equipos del partido' }, { status: 400 })
+      }
+    }
     updateData.advancer_team_id = data.advancerTeamId
   }
 
