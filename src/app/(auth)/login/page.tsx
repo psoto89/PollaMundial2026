@@ -59,7 +59,14 @@ export default function LoginPage() {
     setErrorMsg('')
 
     const supabase = createClient()
-    const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token, type: 'email' })
+    const mail = email.trim()
+    // El código puede venir de la plantilla de login ('email') o la de primer registro
+    // ('signup'). Probamos como login y, si no, como confirmación de registro.
+    let { error } = await supabase.auth.verifyOtp({ email: mail, token, type: 'email' })
+    if (error) {
+      const retry = await supabase.auth.verifyOtp({ email: mail, token, type: 'signup' })
+      error = retry.error
+    }
     if (error) {
       setStatus('error')
       setErrorMsg('Código inválido o vencido. Revisa los 6 dígitos o pide uno nuevo.')
