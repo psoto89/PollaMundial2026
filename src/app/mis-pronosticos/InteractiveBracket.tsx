@@ -262,6 +262,10 @@ function SlotCard({
 }) {
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [msg, setMsg] = useState('')
+  // ¿Ya hay algo guardado (marcador o avance)? → arranca en modo lectura, con botón "Editar".
+  const [editing, setEditing] = useState(
+    !(pick && ((pick.local ?? '') !== '' || (pick.visitante ?? '') !== '' || !!pick.advancer)),
+  )
 
   const localId = real?.localId ?? null
   const visitanteId = real?.visitanteId ?? null
@@ -290,13 +294,15 @@ function SlotCard({
     new Date(real.kickoffAt).getTime() >= new Date(bracketActivatedAt).getTime()
   const windowOpen = real?.estado === 'scheduled' && participates && (deadlineMs === null || now < deadlineMs)
   const editable = roundOpen && windowOpen && bothKnown
+  // Editable de verdad solo cuando el usuario está en modo edición (no bloqueado tras guardar)
+  const canEdit = editable && editing
 
   async function persist(advancer: string | null, local: string, visitante: string) {
     setStatus('saving'); setMsg('')
     const pl = local !== '' ? parseInt(local, 10) : null
     const pv = visitante !== '' ? parseInt(visitante, 10) : null
     const r = await saveBracketSlot(slot, advancer, pl, pv)
-    if (r.ok) { setStatus('saved'); setMsg('Guardado ✓') }
+    if (r.ok) { setStatus('saved'); setMsg('Guardado ✓'); setEditing(false) }
     else { setStatus('error'); setMsg(r.error ?? 'Error') }
   }
   // Solo se usa para desempates: en empate el usuario elige quién pasa.
@@ -326,16 +332,16 @@ function SlotCard({
       {bothKnown ? (
         <div className="space-y-1.5">
           <TeamRow
-            name={localName!} selected={advancerId === localId} editable={editable}
+            name={localName!} selected={advancerId === localId} editable={canEdit}
             score={pick?.local ?? ''} result={hasResult ? real!.golesLocal : null}
             onScore={(v) => setScore('local', v)}
           />
           <TeamRow
-            name={visitanteName!} selected={advancerId === visitanteId} editable={editable}
+            name={visitanteName!} selected={advancerId === visitanteId} editable={canEdit}
             score={pick?.visitante ?? ''} result={hasResult ? real!.golesVisitante : null}
             onScore={(v) => setScore('visitante', v)}
           />
-          {editable && isTie && (
+          {canEdit && isTie && (
             <div className="flex items-center flex-wrap gap-1.5 pt-0.5">
               <span className="text-[10px] text-[#f0a35e] font-semibold shrink-0">Empate — ¿quién pasa?</span>
               <button
@@ -374,17 +380,26 @@ function SlotCard({
           ) : null}
         </span>
         {editable && (
-          <button
-            onClick={saveAll}
-            disabled={status === 'saving'}
-            className="shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-md bg-[#9EE637] text-[#0d1117] disabled:opacity-50"
-          >
-            {status === 'saving' ? '…' : 'Guardar'}
-          </button>
+          canEdit ? (
+            <button
+              onClick={saveAll}
+              disabled={status === 'saving'}
+              className="shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-md bg-[#9EE637] text-[#0d1117] disabled:opacity-50"
+            >
+              {status === 'saving' ? '…' : 'Guardar'}
+            </button>
+          ) : (
+            <button
+              onClick={() => { setEditing(true); setStatus('idle'); setMsg('') }}
+              className="shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-md border border-[#9EE637]/40 text-[#9EE637] hover:bg-[#9EE637]/10 transition-colors"
+            >
+              ✓ Guardado · Editar
+            </button>
+          )
         )}
       </div>
 
-      {msg && <p className={`text-[10px] mt-1 ${status === 'error' ? 'text-[#f85149]' : 'text-[#9EE637]'}`}>{msg}</p>}
+      {msg && editing && <p className={`text-[10px] mt-1 ${status === 'error' ? 'text-[#f85149]' : 'text-[#9EE637]'}`}>{msg}</p>}
       {predCount > 0 && <p className="text-[10px] text-[#768390] mt-1">📊 {predCount}/{totalParticipantes} predicciones</p>}
     </div>
   )
