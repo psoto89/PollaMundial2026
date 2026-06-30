@@ -6,8 +6,8 @@ export const revalidate = 60
 
 // Apuesta por persona (COP). Cada polla tiene su propio pozo = miembros × apuesta.
 const APUESTA_POLLA1 = 100_000
-// Polla 2: pendiente de definir con el grupo. Pon el valor (ej. 100_000) cuando se decida.
-const APUESTA_POLLA2: number | null = null
+// Polla 2 (cuadro): 100.000 por persona; el pozo se reparte 70% al 1º y 30% al 2º.
+const APUESTA_POLLA2: number | null = 100_000
 
 interface ScoreRow {
   participant_id: string
@@ -80,13 +80,12 @@ export default async function PremiacionPage() {
   const p2ByElim = [...p2].sort((a, b) => b.total_eliminacion - a.total_eliminacion)
   const pozoP2 = APUESTA_POLLA2 !== null ? p2.length * APUESTA_POLLA2 : null
 
+  // Polla 2: solo ganan 1º (70%) y 2º (30%). No hay tercer premio.
   const premiosP2: PremioDef[] = [
-    { label: '🥇 1er puesto', color: '#ffa657', pct: pctPrimero,
+    { label: '🥇 1er puesto', color: '#ffa657', pct: 0.70,
       lider: p2ByElim[0] ? { nombre: nombre(p2ByElim[0]), detalle: `${p2ByElim[0].total_eliminacion} pts` } : null },
-    { label: '🥈 2do puesto', color: '#c9d1d9', pct: pctSegundo,
+    { label: '🥈 2do puesto', color: '#c9d1d9', pct: 0.30,
       lider: p2ByElim[1] ? { nombre: nombre(p2ByElim[1]), detalle: `${p2ByElim[1].total_eliminacion} pts` } : null },
-    { label: '🥉 3er puesto', color: '#cd7f32', pct: pctTercero,
-      lider: p2ByElim[2] ? { nombre: nombre(p2ByElim[2]), detalle: `${p2ByElim[2].total_eliminacion} pts` } : null },
   ]
 
   return (
@@ -121,8 +120,9 @@ export default async function PremiacionPage() {
       <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 text-sm text-[#768390]">
         <p>
           ℹ️ Cada polla reparte su propio pozo (miembros × apuesta). El 1º y 2º se definen por el
-          puntaje total de cada polla al final del Mundial; el tercer premio de la Polla 1 va para
-          el mejor en fase de grupos. Mientras tanto se ve quién va ganando cada bolsa.
+          puntaje total de cada polla al final del Mundial. En la <strong className="text-[#e6edf3]">Polla 2</strong> solo
+          ganan el 1º (70%) y el 2º (30%); en la Polla 1 el tercer premio va para el mejor en fase de grupos.
+          Mientras tanto se ve quién va ganando cada bolsa.
         </p>
       </div>
     </div>
