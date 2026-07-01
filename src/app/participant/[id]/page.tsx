@@ -394,12 +394,10 @@ export default async function ParticipantPage({ params }: Props) {
             <span className="text-xs font-semibold bg-[#9EE637]/20 text-[#9EE637] px-1.5 py-0.5 rounded animate-pulse">+{bracketLiveDelta} en vivo</span>
           )}
           {scores && (
+            // total_eliminacion ya incluye los bonos de cuadro (ver recalc: rounds + bonos.total).
+            // No volver a sumar los total_bono_* aquí o se cuentan doble.
             <span className="text-sm font-bold text-[#9EE637]">
-              +{((scores.total_eliminacion as number) ?? 0)
-                + ((scores.total_bono_octavos as number) ?? 0)
-                + ((scores.total_bono_cuartos as number) ?? 0)
-                + ((scores.total_bono_semis as number) ?? 0)
-                + ((scores.total_bono_finales as number) ?? 0)} pts
+              +{(scores.total_eliminacion as number) ?? 0} pts
             </span>
           )}
         </span>
@@ -415,23 +413,36 @@ export default async function ParticipantPage({ params }: Props) {
               <p className="text-xs font-semibold text-[#768390] uppercase tracking-wider mb-1.5">{ROUND_LABELS[round]}</p>
               <div className="divide-y divide-[#21262d] bg-[#161b22] border border-[#30363d] rounded-lg overflow-hidden">
                 {rows.map((r) => (
-                  <div key={r.slot} className={`flex items-center gap-2 px-3 py-2 text-sm ${(r.pts ?? 0) > 0 ? 'bg-[#9EE637]/5' : ''}`}>
-                    <span className="flex-1 min-w-0 truncate text-[#e6edf3]">
-                      {r.localName} <span className="text-[#9EE637] font-mono">{r.predLocal ?? '–'}–{r.predVisitante ?? '–'}</span> {r.visitanteName}
-                    </span>
-                    {r.advancerName && (
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
-                        r.acertoAdvancer ? 'bg-[#9EE637]/20 text-[#9EE637]' : 'bg-[#21262d] text-[#768390]'
-                      }`}>
-                        {r.acertoAdvancer ? '✓ ' : ''}pasa {r.advancerName}
+                  <div key={r.slot} className={`px-3 py-2.5 text-sm ${(r.pts ?? 0) > 0 ? 'bg-[#9EE637]/5' : ''}`}>
+                    {/* Equipos + puntos de la fila */}
+                    <div className="flex items-center gap-2">
+                      <span className="flex-1 min-w-0 truncate text-[#e6edf3]">
+                        {r.localName} <span className="text-[#586069]">vs</span> {r.visitanteName}
                       </span>
-                    )}
-                    {(r.finished || r.live) && (
-                      <span className="text-xs text-[#768390] shrink-0 font-mono">{r.golesLocal ?? '–'}–{r.golesVisitante ?? '–'}</span>
-                    )}
-                    <span className={`text-xs font-bold tabular-nums shrink-0 w-8 text-right ${(r.pts ?? 0) > 0 ? 'text-[#9EE637]' : 'text-[#444d56]'}`}>
-                      {r.pts !== null ? (r.pts > 0 ? `+${r.pts}` : '—') : '?'}
-                    </span>
+                      <span className={`text-sm font-bold tabular-nums shrink-0 ${(r.pts ?? 0) > 0 ? 'text-[#9EE637]' : 'text-[#444d56]'}`}>
+                        {r.pts !== null ? (r.pts > 0 ? `+${r.pts}` : '—') : '?'}
+                      </span>
+                    </div>
+                    {/* Marcadores: tu pronóstico y el resultado real, separados y etiquetados */}
+                    <div className="flex items-center flex-wrap gap-x-2.5 gap-y-1 mt-1.5">
+                      <span className="inline-flex items-center gap-1 text-[11px]">
+                        <span className="uppercase tracking-wide text-[10px] text-[#586069]">Tú</span>
+                        <span className="font-mono text-[#9EE637]">{r.predLocal ?? '–'}–{r.predVisitante ?? '–'}</span>
+                      </span>
+                      {(r.finished || r.live) && (
+                        <span className="inline-flex items-center gap-1 text-[11px]">
+                          <span className="uppercase tracking-wide text-[10px] text-[#586069]">{r.live ? 'En vivo' : 'Final'}</span>
+                          <span className="font-mono text-[#e6edf3]">{r.golesLocal ?? '–'}–{r.golesVisitante ?? '–'}</span>
+                        </span>
+                      )}
+                      {r.advancerName && (
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                          r.acertoAdvancer ? 'bg-[#9EE637]/20 text-[#9EE637]' : 'bg-[#21262d] text-[#768390]'
+                        }`}>
+                          {r.acertoAdvancer ? '✓ ' : ''}pasa {r.advancerName}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
