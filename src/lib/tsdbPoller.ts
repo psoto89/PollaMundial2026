@@ -338,6 +338,7 @@ export async function syncSchedule(): Promise<SyncResult> {
           ourHomeName: our.equipo_local?.nombre ?? '',
         })
         if (adv) update['advancer_team_id'] = adv
+        update['minuto'] = null  // al finalizar no hay minuto (evita 123' fantasma)
       }
 
       const { error } = await db.from('matches').update(update).eq('id', our.id)
@@ -451,6 +452,7 @@ export async function syncLive(): Promise<SyncResult> {
           ourHomeName: our.equipo_local?.nombre ?? '',
         })
         if (adv) update['advancer_team_id'] = adv
+        update['minuto'] = null  // al finalizar no hay minuto (evita 123' fantasma)
       }
 
       const { error } = await db.from('matches').update(update).eq('id', our.id)

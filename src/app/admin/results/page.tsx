@@ -273,7 +273,9 @@ function MatchResultRow({ match, saving, onSave }: MatchResultRowProps) {
   function handleSave() {
     const gl = golesLocal !== '' ? parseInt(golesLocal, 10) : null
     const gv = golesVisitante !== '' ? parseInt(golesVisitante, 10) : null
-    const min = minuto !== '' ? parseInt(minuto, 10) : null
+    // El minuto solo aplica en vivo. Si no está en vivo se manda null (evita
+    // enviar un minuto pegado tipo 123 que rompe la validación max=120 de la API).
+    const min = estado === 'live' && minuto !== '' ? Math.min(parseInt(minuto, 10), 120) : null
     // En grupos no se envía el campo (undefined); en eliminación, '' → null
     const adv = isKnockout ? (advancer === '' ? null : advancer) : undefined
     onSave(match.id, gl, gv, estado, min, adv)
