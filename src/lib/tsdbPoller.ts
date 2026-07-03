@@ -10,7 +10,10 @@
  * idEvent es la clave externa — el mismo en schedule y livescore.
  */
 import { createAdminClient } from '@/lib/supabase/admin'
-import { mapTsdbStatus, tsdbTeamToDb, teamPairKey, orientScores } from '@/config/theSportsDbMap'
+import {
+  mapTsdbStatus, tsdbTeamToDb, teamPairKey, orientScores,
+  penaltyWinnerFromEvent, type TsdbFullEvent,
+} from '@/config/theSportsDbMap'
 import { syncQualifyFromResults } from '@/lib/autoQualify'
 import { advanceBracket } from '@/lib/advanceBracket'
 
@@ -79,6 +82,25 @@ export async function fetchTsdbLive(): Promise<TsdbEvent[]> {
   return (data.livescore ?? []) as TsdbEvent[]
 }
 
+/**
+ * Evento completo (superset de schedule/livescore). Se usa SOLO cuando un partido
+ * de eliminación finaliza empatado (penales) para intentar el ganador de la tanda,
+ * dato que schedule/livescore no traen. Devuelve null si falla (queda el fallback
+ * manual del admin).
+ */
+export async function fetchTsdbEvent(idEvent: string): Promise<TsdbFullEvent | null> {
+  const res = await fetch(`${BASE_URL}/lookup/event/${idEvent}`, {
+    headers: { 'X-API-KEY': apiKey() },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(8_000),
+  })
+  if (!res.ok) return null
+  const data = await res.json()
+  // v2 puede envolver en `lookup` o `events`; tomar el primero
+  const arr = (data.lookup ?? data.events ?? []) as TsdbFullEvent[]
+  return arr[0] ?? null
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Parsea score string a int. "" o null → null */
@@ -97,6 +119,8 @@ type OurMatch = {
   goles_local:         number | null
   goles_visitante:     number | null
   estado:              string
+  advancer_team_id:    string | null
+  kickoff_at:          string | null
   last_source:         string | null
   last_source_at:      string | null
 }
@@ -118,6 +142,55 @@ function knockoutAdvancer(
   if (orientedLocal === null || orientedVisitante === null) return null
   if (orientedLocal > orientedVisitante) return localId
   if (orientedVisitante > orientedLocal) return visitanteId
+  return null
+}
+
+/**
+ * Resuelve el clasificado de un partido de eliminación recién finalizado:
+ *   1) ganador decisivo en 90'/alargue → directo del marcador (síncrono).
+ *   2) empate (penales) → intenta el evento completo (/lookup/event) para el
+ *      ganador de la tanda. Solo se intenta en el CIERRE (freshFinish) y si aún
+ *      no hay clasificado, para no pisar la carga manual del admin ni martillar la
+ *      API. Si no hay dato utilizable → null (queda el fallback manual).
+ */
+async function resolveKnockoutAdvancer(params: {
+  fase:              string
+  orientedLocal:     number | null
+  orientedVisitante: number | null
+  localId:           string | null
+  visitanteId:       string | null
+  currentAdvancer:   string | null
+  freshFinish:       boolean
+  idEvent:           string | null
+  ourHomeName:       string
+}): Promise<string | null> {
+  const { fase, orientedLocal, orientedVisitante, localId, visitanteId } = params
+  const direct = knockoutAdvancer(fase, orientedLocal, orientedVisitante, localId, visitanteId)
+  if (direct) return direct
+
+  // A partir de aquí: solo eliminación con marcador empatado (posibles penales)
+  if (fase === 'grupos') return null
+  if (orientedLocal === null || orientedVisitante === null) return null
+  if (orientedLocal !== orientedVisitante) return null
+  // No pisar un clasificado ya definido (admin) ni gastar lookup fuera del cierre
+  if (params.currentAdvancer) return params.currentAdvancer
+  if (!params.freshFinish || !params.idEvent) return null
+
+  try {
+    const full = await fetchTsdbEvent(params.idEvent)
+    if (full) {
+      const side = penaltyWinnerFromEvent(full, params.ourHomeName)
+      if (side === 'local') return localId
+      if (side === 'visitante') return visitanteId
+      // Sin campo de penales utilizable: log del shape real para poder cablearlo luego
+      console.warn(
+        `[tsdb] empate a penales sin ganador en /lookup/event ${params.idEvent}; ` +
+        `evento: ${JSON.stringify(full).slice(0, 600)}`,
+      )
+    }
+  } catch (e) {
+    console.error(`[tsdb] fetchTsdbEvent(${params.idEvent}) falló`, e)
+  }
   return null
 }
 
@@ -174,7 +247,8 @@ export async function syncSchedule(): Promise<SyncResult> {
       .from('matches')
       .select(`
         id, external_id, fase, equipo_local_id, equipo_visitante_id,
-        goles_local, goles_visitante, estado, last_source, last_source_at,
+        goles_local, goles_visitante, estado, advancer_team_id, kickoff_at,
+        last_source, last_source_at,
         equipo_local:teams!equipo_local_id(nombre),
         equipo_visitante:teams!equipo_visitante_id(nombre)
       `)
@@ -248,13 +322,21 @@ export async function syncSchedule(): Promise<SyncResult> {
       if (oriented.goles_local !== null)     update['goles_local']     = oriented.goles_local
       if (oriented.goles_visitante !== null) update['goles_visitante'] = oriented.goles_visitante
 
-      // Clasificado automático al finalizar un partido de eliminación con ganador
-      // en los 90′. Empate (penales) → no se toca: lo define el admin a mano.
+      // Clasificado automático al finalizar eliminación: ganador en 90'/alargue →
+      // directo del marcador; empate (penales) → intento vía evento completo en el
+      // cierre; si no hay dato, lo define el admin a mano.
       if (nowFinished) {
-        const adv = knockoutAdvancer(
-          our.fase, oriented.goles_local, oriented.goles_visitante,
-          our.equipo_local_id, our.equipo_visitante_id,
-        )
+        const adv = await resolveKnockoutAdvancer({
+          fase: our.fase,
+          orientedLocal: oriented.goles_local,
+          orientedVisitante: oriented.goles_visitante,
+          localId: our.equipo_local_id,
+          visitanteId: our.equipo_visitante_id,
+          currentAdvancer: our.advancer_team_id,
+          freshFinish: !wasFinished,
+          idEvent: our.external_id ?? ev.idEvent,
+          ourHomeName: our.equipo_local?.nombre ?? '',
+        })
         if (adv) update['advancer_team_id'] = adv
       }
 
@@ -306,7 +388,8 @@ export async function syncLive(): Promise<SyncResult> {
       .from('matches')
       .select(`
         id, external_id, fase, equipo_local_id, equipo_visitante_id,
-        goles_local, goles_visitante, estado, last_source, last_source_at,
+        goles_local, goles_visitante, estado, advancer_team_id, kickoff_at,
+        last_source, last_source_at,
         equipo_local:teams!equipo_local_id(nombre),
         equipo_visitante:teams!equipo_visitante_id(nombre)
       `)
@@ -353,12 +436,20 @@ export async function syncLive(): Promise<SyncResult> {
       if (oriented.goles_visitante !== null) update['goles_visitante'] = oriented.goles_visitante
       if (minuto !== null)                   update['minuto']          = minuto
 
-      // Clasificado automático al finalizar eliminación con ganador en 90′
+      // Clasificado automático al finalizar eliminación: ganador en 90'/alargue →
+      // directo del marcador; empate (penales) → intento vía evento completo.
       if (nowFinished) {
-        const adv = knockoutAdvancer(
-          our.fase, oriented.goles_local, oriented.goles_visitante,
-          our.equipo_local_id, our.equipo_visitante_id,
-        )
+        const adv = await resolveKnockoutAdvancer({
+          fase: our.fase,
+          orientedLocal: oriented.goles_local,
+          orientedVisitante: oriented.goles_visitante,
+          localId: our.equipo_local_id,
+          visitanteId: our.equipo_visitante_id,
+          currentAdvancer: our.advancer_team_id,
+          freshFinish: !wasFinished,
+          idEvent: our.external_id ?? ev.idEvent,
+          ourHomeName: our.equipo_local?.nombre ?? '',
+        })
         if (adv) update['advancer_team_id'] = adv
       }
 
@@ -379,6 +470,25 @@ export async function syncLive(): Promise<SyncResult> {
       await reconcileQualifiers(db, result)
       try { await advanceBracket(db) } catch (e) { result.errors.push(`advanceBracket: ${String(e)}`) }
       triggerRecalc()
+    }
+
+    // Backstop: partidos nuestros marcados 'live' que YA no aparecen en el feed de
+    // livescore (TheSportsDB los saca al terminar). Si su kickoff fue hace 100 min–6 h
+    // (ventana que evita falsos positivos por cortes momentáneos y no re-procesa datos
+    // viejos), se finalizan vía syncSchedule (idempotente: marca finished, deriva el
+    // clasificado, avanza la llave y recalcula). Sin esto quedan pegados EN VIVO hasta
+    // el cron de schedule (3×/día).
+    const liveIds = new Set(events.map((e) => e.idEvent))
+    const now = Date.now()
+    const droppedLive = (rawMatches as unknown as OurMatchLive[]).filter((m) => {
+      if (m.estado !== 'live' || !m.external_id || liveIds.has(m.external_id)) return false
+      if (!m.kickoff_at) return false
+      const age = now - new Date(m.kickoff_at).getTime()
+      return age > 100 * 60 * 1000 && age < 6 * 60 * 60 * 1000
+    })
+    if (droppedLive.length > 0) {
+      const sched = await syncSchedule()
+      result.errors.push(...sched.errors)
     }
 
   } catch (err) {

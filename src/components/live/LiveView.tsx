@@ -296,7 +296,7 @@ function LiveMatchCard({ match, preds, allParticipants }: LiveMatchCardProps) {
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-[#f85149] uppercase tracking-widest flex items-center gap-2">
             <span className="live-dot w-2 h-2 rounded-full bg-[#f85149]" />
-            EN VIVO {match.minuto !== null ? `· ${match.minuto}'` : ''}
+            EN VIVO {match.minuto !== null ? `· ${Math.min(match.minuto, 120)}'` : ''}
           </span>
           <div className="flex items-center gap-3">
             <span className="text-xs text-[#768390]">{match.bracket_slot ? 'Eliminación' : `Grupo ${match.grupo}`}</span>

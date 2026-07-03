@@ -67,7 +67,7 @@ export default function LiveBanner({ initialMatches }: Props) {
                 {match.equipo_local?.nombre} {match.goles_local ?? '–'} – {match.goles_visitante ?? '–'} {match.equipo_visitante?.nombre}
               </span>
               {match.minuto !== null && (
-                <span className="text-xs text-[#768390] shrink-0">{match.minuto}&apos;</span>
+                <span className="text-xs text-[#768390] shrink-0">{Math.min(match.minuto, 120)}&apos;</span>
               )}
             </div>
             <span className="text-xs text-[#9EE637] shrink-0">Ver →</span>

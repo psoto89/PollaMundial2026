@@ -9,6 +9,10 @@ import { normalizeTeam } from '@/config/excelMap'
 
 // ─── Status mapping ───────────────────────────────────────────────────────────
 
+// Fuente: doc oficial TheSportsDB (fútbol). Estados FINALIZADOS: FT, AET, PEN, AWD, WO.
+// ⚠️ Ojo: `P` = "Penalty In Progress" (live) pero `PEN` = "Match Finished After Penalty"
+// (terminado). Antes PEN se mapeaba a 'live' y los partidos definidos por penales
+// quedaban pegados EN VIVO y fuera del recalc. `AP` es alias de "After Penalties".
 const STATUS_MAP: Record<string, 'scheduled' | 'live' | 'finished'> = {
   NS:              'scheduled',
   '1H':            'live',
@@ -17,12 +21,21 @@ const STATUS_MAP: Record<string, 'scheduled' | 'live' | 'finished'> = {
   ET:              'live',
   ET1:             'live',
   ET2:             'live',
-  P:               'live',
-  PEN:             'live',
+  BT:              'live',      // Break Time (descanso dentro del alargue)
+  P:               'live',      // Penales EN CURSO
   LIVE:            'live',
+  SUSP:            'live',      // Suspendido (temporal) → seguir vigilando
+  INT:             'live',      // Interrumpido (temporal) → seguir vigilando
   FT:              'finished',
-  AET:             'finished',
+  AET:             'finished',  // Terminado tras alargue
+  PEN:             'finished',  // Terminado tras penales
+  AP:              'finished',  // Alias "After Penalties"
+  AWD:             'finished',  // Technical loss
+  WO:              'finished',  // Walkover
   'Match Finished':'finished',
+  PST:             'scheduled', // Aplazado
+  CANC:            'scheduled', // Cancelado
+  ABD:             'scheduled', // Abandonado
 }
 
 export function mapTsdbStatus(strStatus: string): 'scheduled' | 'live' | 'finished' {
@@ -128,4 +141,54 @@ export function orientScores(
   return sameOrientation
     ? { goles_local: homeScore, goles_visitante: awayScore }
     : { goles_local: awayScore, goles_visitante: homeScore }
+}
+
+// ─── Ganador de penales desde el evento completo ─────────────────────────────
+// La API no expone el ganador de penales en schedule/livescore; el objeto de
+// /lookup/event PUEDE traer el marcador de la tanda. Nombres de campo a confirmar
+// con datos reales: se intentan varios y, si ninguno aplica, se devuelve null
+// (queda el fallback manual del admin). El poller loguea el evento crudo para
+// descubrir el campo exacto la primera vez que ocurra un empate a penales.
+
+/** Objeto de /lookup/event (superset del de schedule/livescore). */
+export interface TsdbFullEvent {
+  strHomeTeam?: string
+  strAwayTeam?: string
+  intHomeScore?: string | null
+  intAwayScore?: string | null
+  // Posibles campos del marcador de penales (nombres tentativos)
+  intHomeScorePenalty?: string | null
+  intAwayScorePenalty?: string | null
+  strResult?: string | null
+  [k: string]: unknown
+}
+
+function parsePenScore(s: unknown): number | null {
+  if (s === null || s === undefined || s === '') return null
+  const n = parseInt(String(s), 10)
+  return isNaN(n) ? null : n
+}
+
+/**
+ * Determina, en el orden local/visitante de NUESTRA BD, quién ganó la tanda de
+ * penales a partir del evento completo. Devuelve 'local' | 'visitante' | null.
+ * Solo usa campos EXPLÍCITOS de penales para no arriesgar un ganador equivocado:
+ * si no hay dato claro devuelve null (el admin lo resuelve con un clic).
+ *
+ * @param ev           evento de /lookup/event
+ * @param ourHomeName  nombre de nuestro equipo local en la BD
+ */
+export function penaltyWinnerFromEvent(
+  ev: TsdbFullEvent,
+  ourHomeName: string,
+): 'local' | 'visitante' | null {
+  const ph = parsePenScore(ev.intHomeScorePenalty)
+  const pa = parsePenScore(ev.intAwayScorePenalty)
+  if (ph === null || pa === null || ph === pa) return null
+  const tsdbHomeWon = ph > pa
+  // ¿el "home" de TheSportsDB es nuestro local? (si está invertido, se voltea)
+  const sameOrientation =
+    normalizeTeam(tsdbTeamToDb(ev.strHomeTeam ?? '')) === normalizeTeam(ourHomeName)
+  const ourLocalWon = sameOrientation ? tsdbHomeWon : !tsdbHomeWon
+  return ourLocalWon ? 'local' : 'visitante'
 }

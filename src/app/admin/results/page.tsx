@@ -261,6 +261,15 @@ function MatchResultRow({ match, saving, onSave }: MatchResultRowProps) {
     finished: 'text-[#9EE637]',
   }
 
+  // Empate a penales sin clasificado: la API no da el ganador de la tanda → el admin
+  // debe elegirlo con un clic para que sume el +2 y los bonos de cuadro.
+  const needsPenaltyPick =
+    isKnockout &&
+    match.estado === 'finished' &&
+    match.goles_local !== null &&
+    match.goles_local === match.goles_visitante &&
+    !match.advancer_team_id
+
   function handleSave() {
     const gl = golesLocal !== '' ? parseInt(golesLocal, 10) : null
     const gv = golesVisitante !== '' ? parseInt(golesVisitante, 10) : null
@@ -344,7 +353,10 @@ function MatchResultRow({ match, saving, onSave }: MatchResultRowProps) {
       {/* Clasificado (solo eliminación): el marcador es el FINAL (incluye alargue);
           si quedan empatados tras 120', el avance se define por penales y se guarda aparte. */}
       {isKnockout && (
-        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[#21262d]">
+        <div className={`flex items-center gap-2 mt-2 pt-2 border-t ${needsPenaltyPick ? 'border-[#f0a020]/40' : 'border-[#21262d]'}`}>
+          {needsPenaltyPick && (
+            <span className="text-xs text-[#f0a020] shrink-0" title="Empate a penales: la API no da el ganador. Elige el clasificado para que sume el +2 y los bonos.">⚠️ Falta clasificado</span>
+          )}
           <span className="text-xs text-[#768390] shrink-0" title="El marcador es el final (incluye alargue). Define quién pasa, sobre todo si quedan empatados tras 120' (penales).">Clasifica:</span>
           <select
             value={advancer}
