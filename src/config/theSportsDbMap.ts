@@ -143,12 +143,12 @@ export function orientScores(
     : { goles_local: awayScore, goles_visitante: homeScore }
 }
 
-// ─── Ganador de penales desde el evento completo ─────────────────────────────
-// La API no expone el ganador de penales en schedule/livescore; el objeto de
-// /lookup/event PUEDE traer el marcador de la tanda. Nombres de campo a confirmar
-// con datos reales: se intentan varios y, si ninguno aplica, se devuelve null
-// (queda el fallback manual del admin). El poller loguea el evento crudo para
-// descubrir el campo exacto la primera vez que ocurra un empate a penales.
+// ─── Ganador de penales/alargue desde el evento completo ─────────────────────
+// La API no expone el ganador en schedule/livescore, pero el objeto de
+// /lookup/event trae el desempate en intHomeScoreExtra/intAwayScoreExtra (validado
+// con datos reales: AP Australia 1-1 Egipto → Extra 2-4 = ganó Egipto en penales).
+// Ese par decide cuando la reglamentación (intHomeScore/intAwayScore) fue empate.
+// Si no viene el desempate, se devuelve null (fallback manual del admin).
 
 /** Objeto de /lookup/event (superset del de schedule/livescore). */
 export interface TsdbFullEvent {
@@ -156,9 +156,9 @@ export interface TsdbFullEvent {
   strAwayTeam?: string
   intHomeScore?: string | null
   intAwayScore?: string | null
-  // Posibles campos del marcador de penales (nombres tentativos)
-  intHomeScorePenalty?: string | null
-  intAwayScorePenalty?: string | null
+  // Desempate por alargue/penales (marcador de la tanda cuando strStatus=AP)
+  intHomeScoreExtra?: string | null
+  intAwayScoreExtra?: string | null
   strResult?: string | null
   [k: string]: unknown
 }
@@ -170,10 +170,10 @@ function parsePenScore(s: unknown): number | null {
 }
 
 /**
- * Determina, en el orden local/visitante de NUESTRA BD, quién ganó la tanda de
- * penales a partir del evento completo. Devuelve 'local' | 'visitante' | null.
- * Solo usa campos EXPLÍCITOS de penales para no arriesgar un ganador equivocado:
- * si no hay dato claro devuelve null (el admin lo resuelve con un clic).
+ * Determina, en el orden local/visitante de NUESTRA BD, quién ganó el desempate
+ * (penales/alargue) a partir del evento completo. Devuelve 'local'|'visitante'|null.
+ * Usa intHomeScoreExtra/intAwayScoreExtra; si no hay desempate claro devuelve null
+ * (el admin lo resuelve con un clic).
  *
  * @param ev           evento de /lookup/event
  * @param ourHomeName  nombre de nuestro equipo local en la BD
@@ -182,8 +182,8 @@ export function penaltyWinnerFromEvent(
   ev: TsdbFullEvent,
   ourHomeName: string,
 ): 'local' | 'visitante' | null {
-  const ph = parsePenScore(ev.intHomeScorePenalty)
-  const pa = parsePenScore(ev.intAwayScorePenalty)
+  const ph = parsePenScore(ev.intHomeScoreExtra)
+  const pa = parsePenScore(ev.intAwayScoreExtra)
   if (ph === null || pa === null || ph === pa) return null
   const tsdbHomeWon = ph > pa
   // ¿el "home" de TheSportsDB es nuestro local? (si está invertido, se voltea)

@@ -80,26 +80,34 @@ describe('mapTsdbStatus', () => {
 })
 
 describe('penaltyWinnerFromEvent', () => {
-  it('sin campos de penales → null (fallback admin)', () => {
+  it('sin desempate (Extra vacío) → null (fallback admin)', () => {
     expect(penaltyWinnerFromEvent({ strHomeTeam: 'Canada', intHomeScore: '1', intAwayScore: '1' }, 'Canadá')).toBeNull()
   })
 
   it('empate en penales (mismo valor) → null', () => {
     expect(penaltyWinnerFromEvent(
-      { strHomeTeam: 'Canada', intHomeScorePenalty: '3', intAwayScorePenalty: '3' }, 'Canadá',
+      { strHomeTeam: 'Canada', intHomeScoreExtra: '3', intAwayScoreExtra: '3' }, 'Canadá',
     )).toBeNull()
+  })
+
+  it('caso real AP Australia 1-1 Egipto, Extra 2-4 → gana el visitante (Egipto)', () => {
+    // BD local = Australia; TheSportsDB home = Australia (mismo orden); penales 2-4 → visitante
+    expect(penaltyWinnerFromEvent(
+      { strHomeTeam: 'Australia', intHomeScore: '1', intAwayScore: '1', intHomeScoreExtra: '2', intAwayScoreExtra: '4' },
+      'Australia',
+    )).toBe('visitante')
   })
 
   it('orden directo: home TheSportsDB = local BD → gana local', () => {
     expect(penaltyWinnerFromEvent(
-      { strHomeTeam: 'Canada', intHomeScorePenalty: '4', intAwayScorePenalty: '3' }, 'Canadá',
+      { strHomeTeam: 'Canada', intHomeScoreExtra: '4', intAwayScoreExtra: '3' }, 'Canadá',
     )).toBe('local')
   })
 
   it('orden invertido: home TheSportsDB ≠ local BD → voltea', () => {
-    // BD local = Suiza, pero TheSportsDB home = Qatar; ganan los penales el home (Qatar) → nuestro visitante
+    // BD local = Suiza, pero TheSportsDB home = Qatar; gana el home (Qatar) en penales → nuestro visitante
     expect(penaltyWinnerFromEvent(
-      { strHomeTeam: 'Qatar', intHomeScorePenalty: '5', intAwayScorePenalty: '4' }, 'Suiza',
+      { strHomeTeam: 'Qatar', intHomeScoreExtra: '5', intAwayScoreExtra: '4' }, 'Suiza',
     )).toBe('visitante')
   })
 })
