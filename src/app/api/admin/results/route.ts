@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { verifyAdminSession } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncQualifyFromResults } from '@/lib/autoQualify'
+import { syncSemisFromResults } from '@/lib/autoSemis'
 import { advanceBracket } from '@/lib/advanceBracket'
 
 // ─── Schemas individuales ─────────────────────────────────────
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
       if (!parsed.success) {
         return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
       }
-      return await handleOfficialResult(db, parsed.data)
+      return await handleOfficialResult(db, parsed.data, req)
     }
 
     return NextResponse.json({ error: 'type inválido' }, { status: 400 })
@@ -126,20 +127,18 @@ async function handleMatchResult(
       console.error('[handleMatchResult] advanceBracket falló (no bloqueante)', e)
     }
 
+    // Derivar semifinalistas/puestos finales de la Polla 1 desde los cuartos/final
+    // ya finalizados (official_results scope='semis'). Automático, sin carga manual.
+    try {
+      await syncSemisFromResults(db)
+    } catch (e) {
+      console.error('[handleMatchResult] auto-semis falló (no bloqueante)', e)
+    }
+
     // 2) Recalc COMPLETO siempre (grupos + eliminación + clasificados + semis +
     //    preguntas). Antes solo corría si cambiaban los clasificados, por lo que
     //    un partido de ELIMINACIÓN al terminar no actualizaba total_eliminacion.
-    try {
-      const res = await fetch(new URL('/api/admin/recalc', req.url), {
-        method: 'POST',
-        headers: { 'x-internal-secret': process.env.ADMIN_SESSION_SECRET ?? '' },
-      })
-      if (!res.ok) {
-        console.error('[handleMatchResult] recalc interno falló:', res.status)
-      }
-    } catch (e) {
-      console.error('[handleMatchResult] recalc interno falló', e)
-    }
+    await triggerRecalc(req)
   }
 
   return NextResponse.json({ ok: true })
@@ -148,6 +147,7 @@ async function handleMatchResult(
 async function handleOfficialResult(
   db: ReturnType<typeof createAdminClient>,
   data: OfficialResultInput,
+  req: NextRequest,
 ) {
   const { error } = await db
     .from('official_results')
@@ -156,6 +156,31 @@ async function handleOfficialResult(
       { onConflict: 'scope,key' },
     )
   if (error) throw new Error(`official_results upsert: ${error.message}`)
+
+  // Recalcular puntos tras guardar el resultado oficial. Sin esto, cargar
+  // semifinalistas/clasificados/respuestas NO aplicaba puntos hasta que un
+  // partido terminara o se pulsara "Recalcular" manualmente.
+  await triggerRecalc(req)
+
   return NextResponse.json({ ok: true })
+}
+
+/**
+ * Dispara el recálculo completo de scores_cache vía llamada interna
+ * server-to-server (auth por header x-internal-secret). No bloqueante:
+ * si falla, se loggea pero no rompe el guardado.
+ */
+async function triggerRecalc(req: NextRequest): Promise<void> {
+  try {
+    const res = await fetch(new URL('/api/admin/recalc', req.url), {
+      method: 'POST',
+      headers: { 'x-internal-secret': process.env.ADMIN_SESSION_SECRET ?? '' },
+    })
+    if (!res.ok) {
+      console.error('[results] recalc interno falló:', res.status)
+    }
+  } catch (e) {
+    console.error('[results] recalc interno falló', e)
+  }
 }
 

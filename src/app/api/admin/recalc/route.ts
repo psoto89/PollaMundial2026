@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { syncSemisFromResults } from '@/lib/autoSemis'
 import {
   scoreGroupMatch,
   scoreQualify,
@@ -49,6 +50,16 @@ export async function POST(req: NextRequest) {
     }
 
     const db = createAdminClient()
+
+    // Derivar semifinalistas/puestos finales de la Polla 1 desde los resultados
+    // ya finalizados (official_results scope='semis'), para que el recálculo —
+    // incluido el botón manual "Recalcular puntos" — quede autocontenido y
+    // aplique los +10 sin depender de un sync previo. Idempotente y no bloqueante.
+    try {
+      await syncSemisFromResults(db)
+    } catch (e) {
+      console.error('[recalc] auto-semis falló (no bloqueante)', e)
+    }
 
     // ── Cargar datos ──────────────────────────────────────────
     const [

@@ -16,6 +16,7 @@ import {
 } from '@/config/theSportsDbMap'
 import { syncQualifyFromResults } from '@/lib/autoQualify'
 import { advanceBracket } from '@/lib/advanceBracket'
+import { syncSemisFromResults } from '@/lib/autoSemis'
 
 const LEAGUE_ID  = process.env.WORLDCUP_LEAGUE_ID ?? '4429'
 const BASE_URL   = 'https://www.thesportsdb.com/api/v2/json'
@@ -229,6 +230,24 @@ async function reconcileQualifiers(
   }
 }
 
+/**
+ * Deriva los semifinalistas/puestos finales oficiales de la Polla 1 desde los
+ * cuartos/final ya finalizados. Idempotente y con guard de "sin cambios", así que
+ * es seguro correrla en cada sync. Devuelve true si reescribió official_results.
+ */
+async function reconcileSemis(
+  db: ReturnType<typeof createAdminClient>,
+  result: SyncResult,
+): Promise<boolean> {
+  try {
+    const s = await syncSemisFromResults(db)
+    return s.changed
+  } catch (e) {
+    result.errors.push(`autoSemis: ${String(e)}`)
+    return false
+  }
+}
+
 // ─── Sync schedule (endpoint A) ───────────────────────────────────────────────
 
 /**
@@ -360,7 +379,9 @@ export async function syncSchedule(): Promise<SyncResult> {
     if (anyNewlyFinished) {
       try { await advanceBracket(db) } catch (e) { result.errors.push(`advanceBracket: ${String(e)}`) }
     }
-    if (anyNewlyFinished || qualifyChanged) triggerRecalc()
+    // Derivar semifinalistas/puestos finales de la Polla 1 (backfill idempotente)
+    const semisChanged = await reconcileSemis(db, result)
+    if (anyNewlyFinished || qualifyChanged || semisChanged) triggerRecalc()
 
   } catch (err) {
     result.errors.push(String(err))
@@ -471,6 +492,7 @@ export async function syncLive(): Promise<SyncResult> {
     if (anyNewlyFinished) {
       await reconcileQualifiers(db, result)
       try { await advanceBracket(db) } catch (e) { result.errors.push(`advanceBracket: ${String(e)}`) }
+      await reconcileSemis(db, result)
       triggerRecalc()
     }
 
